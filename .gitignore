@@ -1,0 +1,23 @@
+# Dependencias y build
+node_modules/
+.next/
+out/
+build/
+dist/
+
+# Variables de entorno (NUNCA versionar la connection string)
+.env
+.env.local
+.env.*.local
+
+# Logs y sistema
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Editores
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.example.json
+*.swp

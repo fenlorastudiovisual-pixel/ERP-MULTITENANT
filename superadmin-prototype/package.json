@@ -1,0 +1,18 @@
+{
+  "name": "samjuro-superadmin-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 8790",
+    "build": "next build",
+    "start": "next start -p 8790",
+    "db:setup": "node database/setup.mjs",
+    "db:check": "node database/check.mjs"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.2.1",
+    "next": "16.4.6",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  }
+}
