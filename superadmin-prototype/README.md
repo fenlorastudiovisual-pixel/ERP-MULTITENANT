@@ -36,6 +36,56 @@ Sin `DATABASE_URL` la app sigue funcionando igual con `localStorage`. Con Neon, 
 
 > **Seguridad:** `SUPERADMIN_KEY` / `NEXT_PUBLIC_SUPERADMIN_KEY` son una medida provisional para el prototipo. Antes de producción, sustitúyelas por autenticación real (sesión firmada) y comprueba el rol dentro de cada endpoint.
 
+## Desplegar en Cloudflare Workers (OpenNext)
+
+La app ya está preparada para correr como Worker. `wrangler.jsonc` define el Worker `erp-multitenant` y `open-next.config.ts` usa la configuración mínima (sin R2/D1 obligatorios).
+
+### 1. Autenticar
+
+```bash
+npm run cf:login
+```
+
+### 2. Crear los secrets en Cloudflare
+
+**No los pongas en `wrangler.jsonc`** (ese archivo sí se sube a GitHub). Usa secrets:
+
+```bash
+npx wrangler secret put DATABASE_URL
+npx wrangler secret put SUPERADMIN_KEY
+```
+
+Pega la misma connection string de Neon y la misma frase secreta que usas en `.env.local`. `NEXT_PUBLIC_SUPERADMIN_KEY` no va como secret: se incrusta en el bundle del navegador durante el build (por eso es público por diseño).
+
+### 3. Compilar y desplegar
+
+```bash
+npm run deploy
+```
+
+El script `database/build-worker.mjs` oculta `.env.local` durante el build para que **`DATABASE_URL` y `SUPERADMIN_KEY` no queden horneados en el bundle**; solo deja `NEXT_PUBLIC_SUPERADMIN_KEY`. En runtime, los secrets de Cloudflare sobrescriben `process.env`.
+
+### 4. Verificar
+
+Abre la URL que imprime Wrangler (normalmente `https://erp-multitenant.<tu-cuenta>.workers.dev`) y comprueba:
+
+```
+/api/health  →  {"ok":true,"mode":"neon",...}
+```
+
+### 5. Dominio en Cloudflare
+
+En Cloudflare Dashboard → Workers & Pages → `erp-multitenant` → **Settings → Domains & Routes** añade el dominio, por ejemplo `erp.tudominio.com`. Cloudflare crea el DNS automáticamente. Las demos pueden ir en `demo.tudominio.com` apuntando al mismo Worker o a un Worker separado más adelante.
+
+### Preview local del Worker
+
+```bash
+Copy-Item .dev.vars.example .dev.vars   # rellena los valores
+npm run preview
+```
+
+`.dev.vars` está excluido de Git.
+
 ## Qué incluye
 
 - **17 secciones** del Super Admin, agrupadas en Centro de control, Configuración, Confianza, Crecimiento y Sistema.
@@ -63,6 +113,10 @@ components/sections-ops.jsx  Seguridad, Operaciones, Soporte, Integraciones, Dat
 database/schema.sql          Esquema Postgres con RLS, planes, módulos, flags, demos y auditoría
 database/setup.mjs           Aplica schema.sql a Neon
 database/check.mjs           Verifica conexión y contexto RLS
+database/build-worker.mjs    Compila el Worker sin hornear secretos
+open-next.config.ts          Configuración OpenNext para Cloudflare
+wrangler.jsonc               Configuración del Worker
+.dev.vars.example            Plantilla de variables locales del Worker
 ```
 
 ## Arquitectura y diseño

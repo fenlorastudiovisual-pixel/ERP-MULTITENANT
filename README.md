@@ -50,4 +50,16 @@ El prototipo funciona sin base de datos (datos en `localStorage`). Para conectar
 
 ## Dominios y despliegue
 
-Neon es solo Postgres. Los dominios y subdominios (`erp.tudominio.com`, `demo.tudominio.com`, etc.) se gestionan en Cloudflare; la aplicación Next.js se despliega por separado (Vercel, Cloudflare Workers u otro hosting) y recibe `DATABASE_URL` como secreto.
+Neon es solo Postgres. Los dominios y subdominios (`erp.tudominio.com`, `demo.tudominio.com`, etc.) se gestionan en Cloudflare.
+
+La app se despliega como **Cloudflare Worker** con OpenNext:
+
+```bash
+cd superadmin-prototype
+npm run cf:login
+npx wrangler secret put DATABASE_URL
+npx wrangler secret put SUPERADMIN_KEY
+npm run deploy
+```
+
+El Worker se llama `erp-multitenant`. En Cloudflare → Workers & Pages → `erp-multitenant` → **Domains & Routes** se añade el dominio (por ejemplo `erp.tudominio.com`). La guía completa está en `superadmin-prototype/README.md`.
