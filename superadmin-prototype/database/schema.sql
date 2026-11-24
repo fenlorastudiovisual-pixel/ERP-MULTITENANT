@@ -13,6 +13,14 @@ create table if not exists auth.users (
   created_at timestamptz not null default now()
 );
 
+-- Login del Super Admin: hash PBKDF2 y control de intentos fallidos.
+alter table auth.users add column if not exists password_hash text;
+alter table auth.users add column if not exists active boolean not null default true;
+alter table auth.users add column if not exists failed_attempts integer not null default 0;
+alter table auth.users add column if not exists locked_until timestamptz;
+alter table auth.users add column if not exists last_login_at timestamptz;
+create unique index if not exists auth_users_email_lower_uidx on auth.users (lower(email));
+
 -- ── Funciones de contexto de sesión ─────────────────────────────────────────
 -- La aplicación establece: SET LOCAL app.tenant_id = '<uuid>'; al abrir la transacción del tenant.
 create or replace function public.current_tenant_id()
@@ -48,6 +56,7 @@ create table if not exists public.plans (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+drop trigger if exists plans_touch on public.plans;
 create trigger plans_touch before update on public.plans for each row execute function public.touch_updated_at();
 
 create table if not exists public.modules (
@@ -114,6 +123,7 @@ create table if not exists public.tenants (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+drop trigger if exists tenants_touch on public.tenants;
 create trigger tenants_touch before update on public.tenants for each row execute function public.touch_updated_at();
 create index if not exists tenants_plan_idx on public.tenants(plan_id);
 create index if not exists tenants_status_idx on public.tenants(status);
@@ -152,7 +162,7 @@ create table if not exists public.subscriptions (
   trial_until timestamptz,
   status text not null default 'active'
 );
-create index subscriptions_tenant_idx on public.subscriptions(tenant_id);
+create index if not exists subscriptions_tenant_idx on public.subscriptions(tenant_id);
 
 create table if not exists public.invoices (
   id uuid primary key default gen_random_uuid(),
@@ -165,7 +175,7 @@ create table if not exists public.invoices (
   paid_at timestamptz,
   unique (tenant_id, number)
 );
-create index invoices_tenant_idx on public.invoices(tenant_id);
+create index if not exists invoices_tenant_idx on public.invoices(tenant_id);
 
 -- ── Identidad ────────────────────────────────────────────────────────────────
 create table if not exists public.profiles (
@@ -237,8 +247,8 @@ create table if not exists public.audit_log (
   metadata jsonb not null default '{}'::jsonb,
   occurred_at timestamptz not null default now()
 );
-create index audit_log_tenant_idx on public.audit_log(tenant_id, occurred_at desc);
-create index audit_log_actor_idx on public.audit_log(actor_id, occurred_at desc);
+create index if not exists audit_log_tenant_idx on public.audit_log(tenant_id, occurred_at desc);
+create index if not exists audit_log_actor_idx on public.audit_log(actor_id, occurred_at desc);
 
 -- ── Row Level Security ───────────────────────────────────────────────────────
 -- Cada tabla operativa: el tenant_id se inyecta desde la sesión, nunca del cliente.

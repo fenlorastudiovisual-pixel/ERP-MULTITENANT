@@ -5,21 +5,26 @@
 
 import { NextResponse } from "next/server";
 import { dbEnabled, runAsSuperAdmin } from "../../../lib/db";
+import { getSessionUser } from "../../../lib/auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-function authorized(request) {
-  const expected = process.env.SUPERADMIN_KEY;
-  if (!expected) return process.env.NODE_ENV !== "production";
-  return request.headers.get("x-superadmin-key") === expected;
-}
-
 function unauthorized() {
   return NextResponse.json(
-    { mode: "neon", error: "No autorizado. Configura SUPERADMIN_KEY y envíala en x-superadmin-key." },
+    { mode: "neon", error: "No autorizado. Inicia sesión como Super Admin." },
     { status: 401 },
   );
+}
+
+function sameOrigin(request) {
+  const origin = request.headers.get("origin");
+  if (!origin) return true;
+  try { return new URL(origin).host === new URL(request.url).host; } catch { return false; }
+}
+
+function forbidden() {
+  return NextResponse.json({ mode: "neon", error: "Origen no permitido" }, { status: 403 });
 }
 
 function serverError(error) {
@@ -31,7 +36,7 @@ function serverError(error) {
 
 export async function GET(request) {
   if (!dbEnabled) return NextResponse.json({ mode: "local", state: null }, { status: 503 });
-  if (!authorized(request)) return unauthorized();
+  if (!(await getSessionUser(request))) return unauthorized();
   try {
     const rows = await runAsSuperAdmin((tx) => tx`select payload from public.app_state where id = 'main'`);
     return NextResponse.json({ mode: "neon", state: rows[0]?.payload ?? null });
@@ -42,7 +47,8 @@ export async function GET(request) {
 
 export async function PUT(request) {
   if (!dbEnabled) return NextResponse.json({ mode: "local", error: "Sin base de datos" }, { status: 503 });
-  if (!authorized(request)) return unauthorized();
+  if (!sameOrigin(request)) return forbidden();
+  if (!(await getSessionUser(request))) return unauthorized();
   let body;
   try {
     body = await request.json();
@@ -69,7 +75,8 @@ export async function PUT(request) {
 
 export async function DELETE(request) {
   if (!dbEnabled) return NextResponse.json({ mode: "local", error: "Sin base de datos" }, { status: 503 });
-  if (!authorized(request)) return unauthorized();
+  if (!sameOrigin(request)) return forbidden();
+  if (!(await getSessionUser(request))) return unauthorized();
   try {
     await runAsSuperAdmin((tx) => tx`update public.app_state set payload = '{}'::jsonb, updated_at = now() where id = 'main'`);
     return NextResponse.json({ ok: true, mode: "neon" });

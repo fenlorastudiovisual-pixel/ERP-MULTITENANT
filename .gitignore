@@ -10,7 +10,7 @@ dist/
 .env.local
 .env.*.local
 .env.production
-.env.local.__build_hidden__
+.env*.__build_hidden__
 .dev.vars
 .dev.vars.*
 !.dev.vars.example

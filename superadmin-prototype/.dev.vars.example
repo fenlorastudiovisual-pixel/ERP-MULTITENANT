@@ -1,5 +1,4 @@
 # Copiar a .dev.vars para probar el Worker en local (npm run preview).
-# .dev.vars está excluido de Git. En producción usa: npm run cf:secret DATABASE_URL
+# .dev.vars está excluido de Git. En producción usa secrets de Cloudflare.
 DATABASE_URL=postgresql://neondb_owner:TU_PASSWORD@ep-xxxx-pooler.region.aws.neon.tech/neondb?sslmode=require
-SUPERADMIN_KEY=tu-frase-secreta
-NEXT_PUBLIC_SUPERADMIN_KEY=tu-frase-secreta
+SUPERADMIN_KEY=cambia-esta-frase-secreta-larga

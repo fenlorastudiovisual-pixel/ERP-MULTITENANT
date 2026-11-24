@@ -10,8 +10,6 @@ const STORAGE_KEY = "erp-multitenant-superadmin-v1";
 const STATE_VERSION = 2;
 const PRODUCT_NAME = "ERP Multitenant";
 const DEMO_BASE_URL = "https://demo.tuempresa.com/";
-const SUPERADMIN_KEY = process.env.NEXT_PUBLIC_SUPERADMIN_KEY || "";
-const apiHeaders = () => (SUPERADMIN_KEY ? { "x-superadmin-key": SUPERADMIN_KEY } : {});
 
 const COMPONENTS = {
   dashboard: Dashboard, tenants: Tenants, plans: Plans, billing: Billing,
@@ -84,8 +82,14 @@ export default function Page() {
   const [impersonating, setImpersonating] = useState(null);
   const [query, setQuery] = useState("");
   const [notice, setNotice] = useState("");
+  const [sessionUser, setSessionUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [loggingIn, setLoggingIn] = useState(false);
 
-  // Cargar estado: primero localStorage (respaldo inmediato), luego Neon si está configurado.
+  // Cargar estado: primero localStorage (respaldo inmediato), luego Neon si hay sesión.
   useEffect(() => {
     let alive = true;
     try {
@@ -95,22 +99,30 @@ export default function Page() {
 
     (async () => {
       try {
-        const res = await fetch("/api/state", { headers: apiHeaders() });
+        const me = await fetch("/api/auth/me", { credentials: "include" });
+        if (!alive) return;
+        if (!me.ok) return;
+        const meJson = await me.json();
+        setSessionUser(meJson.user);
+
+        const res = await fetch("/api/state", { credentials: "include" });
         if (!alive) return;
         if (res.ok) {
           const json = await res.json();
           if (json.state && typeof json.state === "object") setData(normalizeState(json.state));
           setDbMode(true);
           setDbError("");
+        } else if (res.status === 401) {
+          setSessionUser(null);
         } else if (res.status >= 500) {
           let message = "BD no disponible; se usa almacenamiento local.";
           try { message = (await res.json()).error || message; } catch (e) { /* noop */ }
           setDbError(message);
         }
       } catch (e) {
-        if (alive) setDbError("No se pudo conectar con Neon; se usa almacenamiento local.");
+        if (alive) setLoginError("No se pudo verificar la sesión.");
       } finally {
-        if (alive) setHydrated(true);
+        if (alive) { setAuthReady(true); setHydrated(true); }
       }
     })();
     return () => { alive = false; };
@@ -127,7 +139,8 @@ export default function Page() {
       try {
         const res = await fetch("/api/state", {
           method: "PUT",
-          headers: { "content-type": "application/json", ...apiHeaders() },
+          credentials: "include",
+          headers: { "content-type": "application/json" },
           body: JSON.stringify({ state: data }),
         });
         if (!res.ok) {
@@ -158,8 +171,51 @@ export default function Page() {
     setSection("dashboard");
     try { window.localStorage.removeItem(STORAGE_KEY); } catch (e) { /* noop */ }
     if (dbMode) {
-      fetch("/api/state", { method: "DELETE", headers: apiHeaders() }).catch((e) => setDbError(`No se pudo reiniciar en Neon: ${e.message}`));
+      fetch("/api/state", { method: "DELETE", credentials: "include" }).catch((e) => setDbError(`No se pudo reiniciar en Neon: ${e.message}`));
     }
+  };
+
+  const submitLogin = async (event) => {
+    event.preventDefault();
+    setLoginError("");
+    setLoggingIn(true);
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      setSessionUser(json.user);
+      setLoginPassword("");
+      setDbMode(false);
+      setHydrated(false);
+
+      const stateRes = await fetch("/api/state", { credentials: "include" });
+      if (stateRes.ok) {
+        const saved = await stateRes.json();
+        if (saved.state && typeof saved.state === "object") setData(normalizeState(saved.state));
+        setDbMode(true);
+        setDbError("");
+      }
+      setHydrated(true);
+      setNotice(`Bienvenido, ${json.user.email}`);
+    } catch (error) {
+      setLoginError(error.message || "No se pudo iniciar sesión");
+    } finally {
+      setLoggingIn(false);
+    }
+  };
+
+  const logout = async () => {
+    await fetch("/api/auth/logout", { method: "POST", credentials: "include" }).catch(() => {});
+    setSessionUser(null);
+    setDbMode(false);
+    setData(initialData());
+    try { window.localStorage.removeItem(STORAGE_KEY); } catch (e) { /* noop */ }
+    setNotice("Sesión cerrada");
   };
 
   const current = SECTIONS.find((s) => s.id === section) || SECTIONS[0];
@@ -201,6 +257,35 @@ export default function Page() {
     } else setSection(id);
   };
 
+  if (!authReady) {
+    return <div className="auth-screen"><div className="auth-card auth-loading"><span className="brand-mark">E</span><p>Verificando sesión…</p></div></div>;
+  }
+
+  if (!sessionUser) {
+    return (
+      <div className="auth-screen">
+        <form className="auth-card" onSubmit={submitLogin}>
+          <span className="brand-mark">E</span>
+          <h1>ERP Multitenant</h1>
+          <p className="auth-subtitle">Panel del Super Admin</p>
+          <label className="field">
+            <span className="field-label">Correo electrónico</span>
+            <input type="email" autoComplete="username" required value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} placeholder="admin@tudominio.com" />
+          </label>
+          <label className="field">
+            <span className="field-label">Contraseña</span>
+            <input type="password" autoComplete="current-password" required value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} placeholder="Mínimo 12 caracteres" />
+          </label>
+          {loginError && <div className="auth-error">{loginError}</div>}
+          <button className="btn btn-primary auth-submit" type="submit" disabled={loggingIn}>
+            {loggingIn ? "Entrando…" : "Entrar al panel"}
+          </button>
+          <p className="auth-foot">Acceso restringido al Super Admin</p>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <aside className="sidebar">
@@ -240,7 +325,10 @@ export default function Page() {
             </div>
             <button className="icon-btn" title="Ayuda" onClick={() => toast("Guía rápida: elige una sección en el menú lateral")}>?</button>
             <button className="icon-btn" title="Notificaciones" onClick={() => setSection("operations")}>🔔<span className="notif-dot" /></button>
-            <div className="avatar" title="María Gómez · Super Admin">MG</div>
+            <div className="user-chip" title={`${sessionUser.email} · Super Admin`}>
+              <span className="avatar">{(sessionUser.email || "SA").slice(0, 2).toUpperCase()}</span>
+              <button className="btn btn-sm" onClick={logout}>Salir</button>
+            </div>
           </div>
         </header>
         <div className="content">

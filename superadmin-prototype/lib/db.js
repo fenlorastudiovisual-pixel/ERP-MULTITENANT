@@ -26,13 +26,17 @@ export function getSql() {
  */
 export async function runInSession({ tenantId = "", role = "tenant_user", actorId = "" } = {}, build) {
   const sql = getSql();
-  const results = await sql.transaction((tx) => [
-    tx`select set_config('app.tenant_id', ${String(tenantId)}, true)`,
-    tx`select set_config('app.user_role', ${String(role)}, true)`,
-    tx`select set_config('app.actor_id', ${String(actorId)}, true)`,
-    build(tx),
-  ]);
-  return results[3];
+  const results = await sql.transaction((tx) => {
+    const built = build(tx);
+    const queries = Array.isArray(built) ? built : [built];
+    return [
+      tx`select set_config('app.tenant_id', ${String(tenantId)}, true)`,
+      tx`select set_config('app.user_role', ${String(role)}, true)`,
+      tx`select set_config('app.actor_id', ${String(actorId)}, true)`,
+      ...queries,
+    ];
+  });
+  return results.length === 4 ? results[3] : results.slice(3);
 }
 
 export const runAsSuperAdmin = (build, actorId = "") =>
