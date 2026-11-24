@@ -1,6 +1,6 @@
-# Samjuro ERP — Prototipo del Super Admin
+# ERP Multitenant — Prototipo del Super Admin
 
-Prototipo navegable del centro de control del nuevo ERP multitenant. Diseño independiente: no reutiliza código ni datos del ERP de la carpeta `samjuro`.
+Prototipo navegable del centro de control del nuevo ERP multitenant. Diseño independiente: no reutiliza código ni datos de ningún proyecto anterior.
 
 ## Arrancar
 

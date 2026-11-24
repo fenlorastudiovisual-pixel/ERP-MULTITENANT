@@ -1,7 +1,7 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "Samjuro ERP — Super Admin",
+  title: "ERP Multitenant — Super Admin",
   description: "Prototipo navegable del Super Admin del ERP multitenant",
 };
 

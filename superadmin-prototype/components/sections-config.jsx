@@ -84,7 +84,7 @@ export function Users({ ctx }) {
       <Panel title="Proveedor de identidad">
         <Field label="Proveedor SSO"><select defaultValue="oidc"><option value="oidc">OpenID Connect</option><option>SAML 2.0</option><option>Google Workspace</option><option>Microsoft Entra ID</option></select></Field>
         <Field label="URL del issuer"><input defaultValue="https://id.fenlora.com.co" /></Field>
-        <Field label="Cliente ID"><input defaultValue="samjuro-console" /></Field>
+        <Field label="Cliente ID"><input defaultValue="erp-console" /></Field>
         <div className="callout green">SSO activo para 3 organizaciones. Última sincronización: hoy 06:42.</div>
         <Btn tone="primary" onClick={() => toast("Configuración de identidad guardada")}>Guardar</Btn>
       </Panel>
@@ -386,7 +386,7 @@ export function Demos({ ctx }) {
       id: "g" + Date.now(), demoId: template.id, name: template.name, icon: template.icon,
       color: form.color, prospect: form.prospect || "Cliente demostrativo", size: form.size,
       language: form.language, modules: form.modules,
-      link: `https://demo.samjuro.com.co/${slug(template.name)}-${code}`,
+      link: `https://demo.tuempresa.com/${slug(template.name)}-${code}`,
       created: today(), expires: addDays(form.expiry), visits: 0, steps: 0, leads: 0, status: "Activa",
     };
     setDemos([g, ...demos]); setWizard(false); setGenerated(g);
@@ -466,7 +466,7 @@ export function Demos({ ctx }) {
       {demos.length === 0 ? <div className="empty-state"><span>▶</span><b>Aún no hay demos generadas</b><p>Elige un nicho arriba y genera tu primer enlace.</p></div> :
         <Table columns={[
           { key: "name", label: "Demo", render: (d) => <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span className="demo-icon" style={{ background: d.color, width: 26, height: 26, fontSize: 13 }}>{d.icon}</span><div><b>{d.prospect}</b><div style={{ color: "#8b93a1", fontSize: 10 }}>{d.name}</div></div></div> },
-          { key: "link", label: "Enlace", render: (d) => <button className="mono link-btn" onClick={() => copy(d.link)}>{d.link.replace("https://demo.samjuro.com.co/", "demo.samjuro.com.co/")} ⧉</button> },
+          { key: "link", label: "Enlace", render: (d) => <button className="mono link-btn" onClick={() => copy(d.link)}>{d.link.replace("https://demo.tuempresa.com/", "demo.tuempresa.com/")} ⧉</button> },
           { key: "expires", label: "Caduca", render: (d) => d.expires },
           { key: "visits", label: "Visitas", align: "right" },
           { key: "leads", label: "Leads", align: "right" },

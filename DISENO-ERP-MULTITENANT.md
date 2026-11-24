@@ -1,6 +1,6 @@
 # ERP Multitenant — Diseño de producto (nuevo, sin herencia)
 
-> Diseño desde cero. No se reutiliza ni se toma como base el ERP de la carpeta `samjuro`.
+> Diseño desde cero. No se reutiliza ni se toma como base ningún proyecto anterior.
 > Público objetivo: pequeñas, medianas, grandes empresas y multinacionales, atendidas desde
 > una misma plataforma con un **Super Admin** como centro de control y un ERP propio por negocio.
 

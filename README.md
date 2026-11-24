@@ -1,6 +1,6 @@
 # ERP-MULTITENANT
 
-Raíz del proyecto del nuevo ERP multitenant. **Carpeta independiente**: no reutiliza código ni datos del ERP anterior ubicado en `../SAMJURO`.
+Raíz del proyecto del nuevo ERP multitenant. **Carpeta independiente**: no reutiliza código ni datos del proyecto anterior.
 
 Repositorio: https://github.com/fenlorastudiovisual-pixel/ERP-MULTITENANT
 
@@ -19,7 +19,7 @@ Repositorio: https://github.com/fenlorastudiovisual-pixel/ERP-MULTITENANT
 
 4. Abrir **http://localhost:8790**.
 
-> No abras `../SAMJURO`: ese es el proyecto antiguo y no debe modificarse.
+> No modifiques el proyecto anterior: esta carpeta es totalmente independiente.
 
 ## Contenido
 

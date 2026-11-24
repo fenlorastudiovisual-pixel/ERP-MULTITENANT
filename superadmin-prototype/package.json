@@ -1,5 +1,5 @@
 {
-  "name": "samjuro-superadmin-prototype",
+  "name": "erp-multitenant-superadmin-prototype",
   "version": "0.1.0",
   "private": true,
   "scripts": {

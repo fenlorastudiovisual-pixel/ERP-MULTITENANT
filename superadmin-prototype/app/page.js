@@ -6,7 +6,10 @@ import { Dashboard, Tenants, Plans, Billing } from "../components/sections-core"
 import { Users, Languages, Localization, Branding, Modules, Demos } from "../components/sections-config";
 import { Security, Operations, Support, Integrations, Data, BI, Settings } from "../components/sections-ops";
 
-const STORAGE_KEY = "samjuro-superadmin-prototype-v1";
+const STORAGE_KEY = "erp-multitenant-superadmin-v1";
+const STATE_VERSION = 2;
+const PRODUCT_NAME = "ERP Multitenant";
+const DEMO_BASE_URL = "https://demo.tuempresa.com/";
 const SUPERADMIN_KEY = process.env.NEXT_PUBLIC_SUPERADMIN_KEY || "";
 const apiHeaders = () => (SUPERADMIN_KEY ? { "x-superadmin-key": SUPERADMIN_KEY } : {});
 
@@ -22,11 +25,11 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 const seedDemos = () => [
   { id: "g1", demoId: "d7", name: "Farmacia", icon: "✚", color: "#22d3ee", prospect: "Farmacias Sol", size: "mediana", language: "es", modules: ["Ventas", "Lotes", "Vencimientos"],
-    link: "https://demo.samjuro.com.co/farmacia-sol-a91c", created: addDays(-3), expires: addDays(11), visits: 14, steps: 9, leads: 2, status: "Activa" },
+    link: "https://demo.tuempresa.com/farmacia-sol-a91c", created: addDays(-3), expires: addDays(11), visits: 14, steps: 9, leads: 2, status: "Activa" },
   { id: "g2", demoId: "d4", name: "Manufactura (textil / metal)", icon: "⚙", color: "#a78bfa", prospect: "Textiles del Sur", size: "grande", language: "es", modules: ["BOM", "MRP", "Calidad"],
-    link: "https://demo.samjuro.com.co/textiles-del-sur-4b82", created: addDays(-8), expires: addDays(6), visits: 31, steps: 18, leads: 5, status: "Activa" },
+    link: "https://demo.tuempresa.com/textiles-del-sur-4b82", created: addDays(-8), expires: addDays(6), visits: 31, steps: 18, leads: 5, status: "Activa" },
   { id: "g3", demoId: "d2", name: "Restaurante / cafetería", icon: "☕", color: "#f59e0b", prospect: "Café Aurora", size: "pequeña", language: "es", modules: ["POS", "Mesas", "Caja"],
-    link: "https://demo.samjuro.com.co/cafe-aurora-7fd2", created: addDays(-21), expires: addDays(-7), visits: 26, steps: 14, leads: 3, status: "Convertida" },
+    link: "https://demo.tuempresa.com/cafe-aurora-7fd2", created: addDays(-21), expires: addDays(-7), visits: 26, steps: 14, leads: 3, status: "Convertida" },
 ];
 
 const initialData = () => ({
@@ -38,11 +41,37 @@ const initialData = () => ({
   translations: TRANSLATIONS_SEED,
   leads: [{ name: "Ejemplo Lead", email: "lead@ejemplo.com", company: "Farmacias Sol", phone: "", demo: "Farmacia", date: today() }],
   branding: {
-    product: "Samjuro ERP", color: "#6366f1", accent: "#22c55e", font: "Inter", mode: "Claro",
+    product: "ERP Multitenant", color: "#6366f1", accent: "#22c55e", font: "Inter", mode: "Claro",
     domain: "erp.tuempresa.com", whiteLabel: true, brandedEmails: true,
   },
-  settings: { platform: "Samjuro ERP", currency: "COP", language: "es", signup: true },
+  settings: { platform: "ERP Multitenant", currency: "COP", language: "es", signup: true },
+  __stateVersion: STATE_VERSION,
 });
+
+// Los estados guardados antes del rebrand conservaban la marca anterior: se normalizan al cargar.
+const normalizeState = (saved) => {
+  if (!saved || typeof saved !== "object") return initialData();
+  const base = initialData();
+  const state = { ...base, ...saved };
+  if ((saved.__stateVersion || 1) < STATE_VERSION) {
+    state.branding = { ...base.branding, ...(saved.branding || {}), product: PRODUCT_NAME };
+    state.settings = { ...base.settings, ...(saved.settings || {}), platform: PRODUCT_NAME };
+    const demos = Array.isArray(saved.demos) ? saved.demos : base.demos;
+    state.demos = demos.map((d) => ({
+      ...d,
+      link: typeof d.link === "string"
+        ? d.link.replace(/https:\/\/demo\.(?:samjuro\.com\.co|tuempresa\.com)\//g, DEMO_BASE_URL)
+        : d.link,
+    }));
+    const tenants = Array.isArray(saved.tenants) ? saved.tenants : base.tenants;
+    const sampleClient = base.tenants.find((t) => t.id === "t16");
+    state.tenants = tenants.some((t) => /^samjuro$/i.test(t.name || "")) || !sampleClient
+      ? tenants
+      : [...tenants, sampleClient];
+    state.__stateVersion = STATE_VERSION;
+  }
+  return state;
+};
 
 export default function Page() {
   const [data, setData] = useState(initialData);
@@ -61,7 +90,7 @@ export default function Page() {
     let alive = true;
     try {
       const saved = window.localStorage.getItem(STORAGE_KEY);
-      if (saved) setData({ ...initialData(), ...JSON.parse(saved) });
+      if (saved) setData(normalizeState(JSON.parse(saved)));
     } catch (e) { /* almacenamiento no disponible */ }
 
     (async () => {
@@ -70,7 +99,7 @@ export default function Page() {
         if (!alive) return;
         if (res.ok) {
           const json = await res.json();
-          if (json.state && typeof json.state === "object") setData({ ...initialData(), ...json.state });
+          if (json.state && typeof json.state === "object") setData(normalizeState(json.state));
           setDbMode(true);
           setDbError("");
         } else if (res.status >= 500) {
@@ -176,8 +205,8 @@ export default function Page() {
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-mark">S</span>
-          <div><b>Samjuro ERP</b><small>Super Admin</small></div>
+          <span className="brand-mark">E</span>
+          <div><b>ERP Multitenant</b><small>Super Admin</small></div>
         </div>
         <nav className="nav">
           {GROUPS.map((group) => (
