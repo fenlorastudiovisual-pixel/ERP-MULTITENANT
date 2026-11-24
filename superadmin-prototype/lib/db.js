@@ -26,7 +26,7 @@ export function getSql() {
  */
 export async function runInSession({ tenantId = "", role = "tenant_user", actorId = "" } = {}, build) {
   const sql = getSql();
-  const results = await sql.transaction(async (tx) => [
+  const results = await sql.transaction((tx) => [
     tx`select set_config('app.tenant_id', ${String(tenantId)}, true)`,
     tx`select set_config('app.user_role', ${String(role)}, true)`,
     tx`select set_config('app.actor_id', ${String(actorId)}, true)`,
@@ -47,7 +47,7 @@ export async function dbHealth() {
   }
   const started = Date.now();
   try {
-    const results = await getSql().transaction(async (tx) => [
+    const results = await getSql().transaction((tx) => [
       tx`select 1 as ok`,
       tx`select current_database() as database, current_user as usr, version() as version`,
     ]);
