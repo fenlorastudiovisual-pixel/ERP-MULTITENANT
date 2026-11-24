@@ -67,7 +67,7 @@ El script `database/build-worker.mjs` oculta `.env.local` durante el build para 
 
 ### 4. Verificar
 
-Abre la URL que imprime Wrangler (normalmente `https://erp-multitenant.<tu-cuenta>.workers.dev`) y comprueba:
+Abre la URL de producción **https://erp.fenloravisual.com** (o la de `workers.dev` que imprime Wrangler) y comprueba:
 
 ```
 /api/health  →  {"ok":true,"mode":"neon",...}
@@ -75,7 +75,7 @@ Abre la URL que imprime Wrangler (normalmente `https://erp-multitenant.<tu-cuent
 
 ### 5. Dominio en Cloudflare
 
-En Cloudflare Dashboard → Workers & Pages → `erp-multitenant` → **Settings → Domains & Routes** añade el dominio, por ejemplo `erp.tudominio.com`. Cloudflare crea el DNS automáticamente. Las demos pueden ir en `demo.tudominio.com` apuntando al mismo Worker o a un Worker separado más adelante.
+El dominio de producción ya configurado es **erp.fenloravisual.com** (Cloudflare → Workers & Pages → `erp-multitenant` → Domains & Routes). Cloudflare creó el DNS automáticamente. Las demos pueden ir en `demo.fenloravisual.com` apuntando al mismo Worker o a un Worker separado más adelante.
 
 ### Preview local del Worker
 

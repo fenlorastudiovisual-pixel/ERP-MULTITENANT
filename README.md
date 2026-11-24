@@ -4,6 +4,8 @@ Raíz del proyecto del nuevo ERP multitenant. **Carpeta independiente**: no reut
 
 Repositorio: https://github.com/fenlorastudiovisual-pixel/ERP-MULTITENANT
 
+Producción: **https://erp.fenloravisual.com** (Cloudflare Worker `erp-multitenant` + Neon).
+
 ## Abrir en Visual Studio Code
 
 1. Abrir VS Code.
