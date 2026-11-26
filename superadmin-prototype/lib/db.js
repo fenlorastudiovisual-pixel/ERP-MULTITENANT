@@ -4,7 +4,9 @@
 
 import { neon } from "@neondatabase/serverless";
 
-const connectionString = process.env.DATABASE_URL || "";
+// DATABASE_APP_URL usa un rol sin BYPASSRLS: las policies RLS se aplican de verdad.
+// DATABASE_URL queda como respaldo y para tareas administrativas (scripts de database/).
+const connectionString = process.env.DATABASE_APP_URL || process.env.DATABASE_URL || "";
 
 export const dbEnabled = Boolean(connectionString);
 

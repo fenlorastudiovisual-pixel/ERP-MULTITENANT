@@ -6,6 +6,7 @@
 import { NextResponse } from "next/server";
 import { dbEnabled, runAsSuperAdmin } from "../../../lib/db";
 import { getSessionUser } from "../../../lib/auth";
+import { buildSyncQueries } from "../../../lib/state-sync";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -60,14 +61,19 @@ export async function PUT(request) {
     return NextResponse.json({ mode: "neon", error: "Falta el objeto state" }, { status: 400 });
   }
   try {
-    const rows = await runAsSuperAdmin((tx) => tx`
-      insert into public.app_state (id, payload)
-      values ('main', ${JSON.stringify(payload)}::jsonb)
-      on conflict (id) do update
-        set payload = excluded.payload, updated_at = now()
-      returning updated_at
-    `);
-    return NextResponse.json({ ok: true, mode: "neon", updatedAt: rows[0]?.updated_at });
+    const results = await runAsSuperAdmin((tx) => [
+      tx`
+        insert into public.app_state (id, payload)
+        values ('main', ${JSON.stringify(payload)}::jsonb)
+        on conflict (id) do update
+          set payload = excluded.payload, updated_at = now()
+        returning updated_at
+      `,
+      // Doble escritura atómica: el JSONB sigue siendo la fuente de la UI y
+      // las tablas operativas quedan sincronizadas en la misma transacción.
+      ...buildSyncQueries(tx, payload),
+    ]);
+    return NextResponse.json({ ok: true, mode: "neon", updatedAt: results[0]?.[0]?.updated_at });
   } catch (error) {
     return serverError(error);
   }

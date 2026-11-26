@@ -42,25 +42,28 @@ const sql = neon(process.env.DATABASE_URL);
 const passwordHash = await hashPassword(password);
 
 const results = await sql.transaction((tx) => [
-  tx`insert into auth.users (email, password_hash, active, failed_attempts)
-     values (${email}, ${passwordHash}, true, 0)
-     on conflict (email) do update
-       set password_hash = excluded.password_hash,
-           active = true,
-           failed_attempts = 0,
-           locked_until = null
-     returning id, email`,
+  tx`select set_config('app.user_role', 'super_admin', true)`,
+  tx`
+    with u as (
+      insert into auth.users (email, password_hash, active, failed_attempts)
+      values (${email}, ${passwordHash}, true, 0)
+      on conflict (email) do update
+        set password_hash = excluded.password_hash,
+            active = true,
+            failed_attempts = 0,
+            locked_until = null
+      returning id
+    )
+    insert into public.profiles (id, email, global_role)
+    select id, ${email}, 'super_admin' from u
+    on conflict (id) do update
+      set global_role = 'super_admin', email = excluded.email
+    returning id, email
+  `,
 ]);
 
-const user = results[0]?.[0];
+const user = results[1]?.[0];
 if (!user) throw new Error("No se pudo crear el usuario");
-
-await sql`
-  insert into public.profiles (id, email, global_role)
-  values (${user.id}::uuid, ${email}, 'super_admin')
-  on conflict (id) do update
-    set global_role = 'super_admin', email = excluded.email
-`;
 
 console.log(`Super Admin listo: ${user.email} (${user.id})`);
 console.log("Ya puedes iniciar sesión en el panel.");

@@ -59,13 +59,33 @@ Nota: esta cuenta no ofrece la opción de proteger el Worker a nivel de Worker. 
 
 5. Reinicia `npm run dev`. El pie del menú debe decir **«Neon conectado»**. Comprueba `http://localhost:8790/api/health`.
 
-Sin `DATABASE_URL` la app sigue funcionando igual con `localStorage`. Con Neon, tenants, planes, demos, usuarios, idiomas, leads y configuración se guardan en `public.app_state` (JSONB) protegido por RLS: solo una sesión con `app.user_role = 'super_admin'` puede leerlo o escribirlo.
+Sin `DATABASE_URL` la app sigue funcionando igual con `localStorage`. Con Neon, la consola guarda el estado en `public.app_state` (JSONB) y, en la misma transacción, lo refleja en tablas operativas reales: `plans`, `modules`, `plan_limits`, `tenants`, `subscriptions`, `demo_scenarios`, `demo_tenants`, `languages`, `translations`, `leads`, `profiles` y `platform_config`. La UI sigue leyendo el JSONB, así que no cambia su aspecto ni su forma de guardar.
+
+### Normalización y RLS real
+
+Los scripts disponibles son:
+
+```bash
+npm run db:inspect        # conteos por tabla y resumen del estado (solo lectura)
+npm run db:migrate-state  # backfill del JSONB a las tablas operativas (idempotente)
+npm run db:rls-check      # comprueba que RLS se aplica de verdad
+```
+
+Los UUID son deterministas: `t1`, `d7` o `inicio` siempre producen el mismo UUID, por lo que la migración se puede repetir sin duplicados.
+
+Neon conecta por defecto con `neondb_owner`, que tiene `BYPASSRLS` e ignora las policies. Para que RLS se aplique de verdad se creó el rol `erp_app` (LOGIN sin `BYPASSRLS`):
+
+```bash
+npm run db:role
+```
+
+Ese script escribe `DATABASE_APP_URL` en `.env.local` y `.dev.vars` (ninguno se versiona). `lib/db.js` usa esa URL para las consultas de la app y `DATABASE_URL` queda reservada para migraciones. En producción hay que añadir el secreto con `npx wrangler secret put DATABASE_APP_URL`.
 
 ### Contexto RLS por tenant
 
 `lib/db.js` expone `runAsTenant(tenantId, (tx) => tx\`...\`)` y `runAsSuperAdmin(...)`. Ambos fijan `app.tenant_id`, `app.user_role` y `app.actor_id` con `set_config(..., true)` dentro de la misma transacción, antes de la consulta. Así el valor no se filtra entre peticiones ni entre tenants.
 
-`npm run db:check` imprime ambos contextos para verificarlo.
+`npm run db:check` imprime ambos contextos y `npm run db:rls-check` confirma que una consulta sin contexto devuelve 0 filas.
 
 > **Seguridad:** con Cloudflare Access activo, el ERP valida el JWT de Access en cada petición y comprueba que el correo corresponda a un `super_admin` activo en Neon. Sin Access, el modo de respaldo usa contraseña hasheada con PBKDF2 y cookie firmada con HMAC. `SUPERADMIN_KEY` es secreto del servidor y nunca viaja al navegador.
 
@@ -85,12 +105,13 @@ npm run cf:login
 
 ```bash
 npx wrangler secret put DATABASE_URL
+npx wrangler secret put DATABASE_APP_URL
 npx wrangler secret put SUPERADMIN_KEY
 npx wrangler secret put CF_ACCESS_TEAM_DOMAIN
 npx wrangler secret put CF_ACCESS_AUD
 ```
 
-Pega la misma connection string de Neon y la misma frase secreta que usas en `.env.local`, además del team domain y el AUD tag de tu aplicación Access. No existe `NEXT_PUBLIC_SUPERADMIN_KEY`: esa clave pública ya no se usa.
+Pega la connection string administrativa de Neon, la URL del rol `erp_app` generada por `npm run db:role`, la frase secreta de `.env.local`, el team domain y el AUD tag de tu aplicación Access. No existe `NEXT_PUBLIC_SUPERADMIN_KEY`: esa clave pública ya no se usa.
 
 ### 3. Compilar y desplegar
 

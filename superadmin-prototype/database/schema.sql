@@ -345,3 +345,180 @@ alter table public.invoices force row level security;
 alter table public.tenant_members force row level security;
 alter table public.audit_log force row level security;
 alter table public.app_state force row level security;
+
+-- ── Normalización operativa (fase 2) ──────────────────────────────────────────
+-- Correspondencia con el estado original del Super Admin. Los UUID son
+-- deterministas (ver lib/state-sync.js), por lo que la migración es idempotente.
+-- Esta sección solo añade objetos: no borra ni reescribe datos existentes.
+
+alter table public.plans add column if not exists source_key text unique;
+alter table public.modules add column if not exists source_key text unique;
+alter table public.feature_flags add column if not exists source_key text unique;
+alter table public.tenants add column if not exists source_key text unique;
+alter table public.tenants add column if not exists country_name text;
+alter table public.tenants add column if not exists mrr numeric(14,2) not null default 0;
+alter table public.tenants add column if not exists users_count integer not null default 0;
+alter table public.subscriptions add column if not exists source_key text unique;
+alter table public.demo_scenarios add column if not exists source_key text unique;
+alter table public.demo_scenarios add column if not exists icon text;
+alter table public.demo_scenarios add column if not exists color text;
+alter table public.demo_scenarios add column if not exists seed_text text;
+alter table public.demo_scenarios add column if not exists notes text;
+alter table public.demo_tenants add column if not exists source_key text unique;
+alter table public.demo_tenants add column if not exists name text;
+alter table public.demo_tenants add column if not exists icon text;
+alter table public.demo_tenants add column if not exists color text;
+alter table public.demo_tenants add column if not exists size text;
+alter table public.demo_tenants add column if not exists language text;
+alter table public.demo_tenants add column if not exists modules text[] not null default '{}';
+alter table public.demo_tenants add column if not exists leads_count integer not null default 0;
+alter table public.profiles add column if not exists source_key text unique;
+alter table public.profiles add column if not exists scope text;
+alter table public.profiles add column if not exists state text;
+
+create table if not exists public.platform_config (
+  id text primary key default 'main',
+  branding jsonb not null default '{}'::jsonb,
+  settings jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.languages (
+  id uuid primary key default gen_random_uuid(),
+  source_key text unique,
+  code text unique not null,
+  name text not null,
+  native_name text,
+  translated smallint not null default 0,
+  state text
+);
+
+create table if not exists public.translations (
+  id uuid primary key default gen_random_uuid(),
+  source_key text unique,
+  key text unique not null,
+  payload jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.leads (
+  id uuid primary key default gen_random_uuid(),
+  source_key text unique,
+  name text,
+  email text,
+  company text,
+  phone text,
+  demo text,
+  captured_date date,
+  created_at timestamptz not null default now()
+);
+create index if not exists leads_demo_idx on public.leads(demo);
+
+-- Las tablas de catálogo las gestiona solo el Super Admin. Los tenant readings
+-- se añadirán cuando se despliegue la app del cliente.
+drop policy if exists superadmin_all on public.plans;
+create policy superadmin_all on public.plans for all to public
+  using (public.is_superadmin()) with check (public.is_superadmin());
+drop policy if exists superadmin_all on public.modules;
+create policy superadmin_all on public.modules for all to public
+  using (public.is_superadmin()) with check (public.is_superadmin());
+drop policy if exists superadmin_all on public.plan_modules;
+create policy superadmin_all on public.plan_modules for all to public
+  using (public.is_superadmin()) with check (public.is_superadmin());
+drop policy if exists superadmin_all on public.plan_limits;
+create policy superadmin_all on public.plan_limits for all to public
+  using (public.is_superadmin()) with check (public.is_superadmin());
+drop policy if exists superadmin_all on public.feature_flags;
+create policy superadmin_all on public.feature_flags for all to public
+  using (public.is_superadmin()) with check (public.is_superadmin());
+drop policy if exists superadmin_all on public.plan_flags;
+create policy superadmin_all on public.plan_flags for all to public
+  using (public.is_superadmin()) with check (public.is_superadmin());
+drop policy if exists superadmin_all on public.demo_scenarios;
+create policy superadmin_all on public.demo_scenarios for all to public
+  using (public.is_superadmin()) with check (public.is_superadmin());
+drop policy if exists superadmin_all on public.demo_tenants;
+create policy superadmin_all on public.demo_tenants for all to public
+  using (public.is_superadmin()) with check (public.is_superadmin());
+drop policy if exists superadmin_all on public.demo_leads;
+create policy superadmin_all on public.demo_leads for all to public
+  using (public.is_superadmin()) with check (public.is_superadmin());
+drop policy if exists superadmin_all on public.profiles;
+create policy superadmin_all on public.profiles for all to public
+  using (public.is_superadmin()) with check (public.is_superadmin());
+drop policy if exists superadmin_all on public.platform_config;
+create policy superadmin_all on public.platform_config for all to public
+  using (public.is_superadmin()) with check (public.is_superadmin());
+drop policy if exists superadmin_all on public.languages;
+create policy superadmin_all on public.languages for all to public
+  using (public.is_superadmin()) with check (public.is_superadmin());
+drop policy if exists superadmin_all on public.translations;
+create policy superadmin_all on public.translations for all to public
+  using (public.is_superadmin()) with check (public.is_superadmin());
+drop policy if exists superadmin_all on public.leads;
+create policy superadmin_all on public.leads for all to public
+  using (public.is_superadmin()) with check (public.is_superadmin());
+
+-- El Super Admin también sincroniza tablas por tenant desde la consola.
+drop policy if exists tenant_scoped on public.tenant_domains;
+create policy tenant_scoped on public.tenant_domains for all to public
+  using (tenant_id = public.current_tenant_id() or public.is_superadmin())
+  with check (tenant_id = public.current_tenant_id() or public.is_superadmin());
+drop policy if exists tenant_scoped on public.tenant_modules;
+create policy tenant_scoped on public.tenant_modules for all to public
+  using (tenant_id = public.current_tenant_id() or public.is_superadmin())
+  with check (tenant_id = public.current_tenant_id() or public.is_superadmin());
+drop policy if exists tenant_scoped on public.tenant_flags;
+create policy tenant_scoped on public.tenant_flags for all to public
+  using (tenant_id = public.current_tenant_id() or public.is_superadmin())
+  with check (tenant_id = public.current_tenant_id() or public.is_superadmin());
+drop policy if exists tenant_scoped on public.subscriptions;
+create policy tenant_scoped on public.subscriptions for all to public
+  using (tenant_id = public.current_tenant_id() or public.is_superadmin())
+  with check (tenant_id = public.current_tenant_id() or public.is_superadmin());
+drop policy if exists tenant_scoped on public.invoices;
+create policy tenant_scoped on public.invoices for all to public
+  using (tenant_id = public.current_tenant_id() or public.is_superadmin())
+  with check (tenant_id = public.current_tenant_id() or public.is_superadmin());
+drop policy if exists tenant_scoped on public.tenant_members;
+create policy tenant_scoped on public.tenant_members for all to public
+  using (tenant_id = public.current_tenant_id() or public.is_superadmin())
+  with check (tenant_id = public.current_tenant_id() or public.is_superadmin());
+
+alter table public.plans enable row level security;
+alter table public.modules enable row level security;
+alter table public.plan_modules enable row level security;
+alter table public.plan_limits enable row level security;
+alter table public.feature_flags enable row level security;
+alter table public.plan_flags enable row level security;
+alter table public.demo_scenarios enable row level security;
+alter table public.demo_tenants enable row level security;
+alter table public.demo_leads enable row level security;
+alter table public.profiles enable row level security;
+alter table public.platform_config enable row level security;
+alter table public.languages enable row level security;
+alter table public.translations enable row level security;
+alter table public.leads enable row level security;
+
+alter table public.plans force row level security;
+alter table public.modules force row level security;
+alter table public.plan_modules force row level security;
+alter table public.plan_limits force row level security;
+alter table public.feature_flags force row level security;
+alter table public.plan_flags force row level security;
+alter table public.demo_scenarios force row level security;
+alter table public.demo_tenants force row level security;
+alter table public.demo_leads force row level security;
+alter table public.profiles force row level security;
+alter table public.platform_config force row level security;
+alter table public.languages force row level security;
+alter table public.translations force row level security;
+alter table public.leads force row level security;
+
+-- La identidad también queda tras RLS. El rol administrador (BYPASSRLS) sigue
+-- funcionando para migraciones; el rol de la app solo ve filas con contexto.
+alter table auth.users enable row level security;
+drop policy if exists superadmin_all on auth.users;
+create policy superadmin_all on auth.users for all to public
+  using (public.is_superadmin()) with check (public.is_superadmin());
+alter table auth.users force row level security;
