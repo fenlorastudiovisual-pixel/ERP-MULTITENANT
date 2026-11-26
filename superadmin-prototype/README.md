@@ -47,7 +47,7 @@ Nota: esta cuenta no ofrece la opción de proteger el Worker a nivel de Worker. 
 
 #### Las rutas de Access (importante para las demos)
 
-Además de la aplicación de la consola, hay que dejar **cuatro rutas** en Zero Trust → Access controls → Applications. Cloudflare aplica la regla **más específica**, así que no se pisan:
+Además de la aplicación de la consola, hay que dejar **cinco rutas** en Zero Trust → Access controls → Applications. Cloudflare aplica la regla **más específica**, así que no se pisan:
 
 | Aplicación | Dominio | Path | Política |
 | --- | --- | --- | --- |
@@ -55,12 +55,37 @@ Además de la aplicación de la consola, hay que dejar **cuatro rutas** en Zero 
 | `ERP Multitenant — Negocio` | `erp.fenloravisual.com` | `negocio/recuperar*` | **Allow**: Email del negocio, One-time PIN |
 | `ERP Multitenant — Panel negocio` | `erp.fenloravisual.com` | `negocio*` | **Bypass**: Include = Everyone |
 | `ERP Multitenant — Demos públicas` | `erp.fenloravisual.com` | `demo/*` | **Bypass**: Include = Everyone |
+| `ERP Multitenant - Demo API publica` | `erp.fenloravisual.com` | `api/demo/*` | **Bypass**: Include = Everyone |
 
 **Importante:** para que una ruta sea pública usa la acción **Bypass**, no **Allow**. Un *Allow* con selector *Everyone* **sigue pidiendo el PIN** porque Cloudflare obliga a autenticar antes de evaluar la regla. Bypass desactiva Access para esa ruta.
 
 El Path de las demos es `demo/*` (con barra) y no `demo*`: así `/demo/<token>` queda público pero `/demos` (el centro privado del Super Admin) sigue protegido por la consola.
 
-Sin la última aplicación, un prospecto que abra un enlace `/demo/...` verá la pantalla de PIN en vez de la demo. **No actives Google y no toques ninguna otra aplicación de Zero Trust.**
+La quinta aplicación es imprescindible: la página `/demo/<token>` llama a `/api/demo/<token>` y a `/api/demo/<token>/lead`. Si solo se hace bypass de `demo/*`, la página carga pero los datos y la captura de lead piden PIN. No basta con añadir `api/demo/*` como segundo *destination* de la app de demos: Cloudflare usa el **dominio canónico** de la aplicación, así que hace falta una aplicación separada. Sin ella, un prospecto ve la demo vacía o un error al solicitar acceso.
+
+Verificación esperada en producción:
+
+```text
+/demo/<token>            → 200 sin PIN
+/api/demo/<token>        → 200 con JSON de la demo
+/api/demo/<token>/lead   → GET 405, POST crea el lead
+/negocio                 → 200 sin PIN
+/negocio/recuperar       → 302 al login con One-time PIN
+/demos                   → 302 al login con One-time PIN
+```
+
+**No actives Google y no toques ninguna otra aplicación de Zero Trust.**
+
+#### Receta del token de Cloudflare para corregir Access
+
+Si hay que crear el token de API otra vez:
+
+1. **dash.cloudflare.com/profile/api-tokens** → **Create Token** → **Start from scratch**.
+2. **Start with an account policy** → cuenta **Fenlorastudiovisual@gmail.com's Account**.
+3. En *Choose a permission*, busca **Access** → **Cloudflare One / Zero Trust** → **Access: Apps and Policies** → botón **Edit** (el contador debe quedar en `1/74`; no marques *Revoke*).
+4. Cierra el desplegable **haciendo clic con el mouse fuera** (no con `Esc`, porque sale de todo el formulario).
+5. **Token expiration** → `7 days`. **Client IP address filtering** → vacío.
+6. **Continue to summary** → **Create Token** → **Copy**. Guárdalo solo en local, nunca en el repositorio.
 
 ## Demos reales: de un negocio semilla a un cliente
 
@@ -192,7 +217,7 @@ npm run db:backfill-email
 
 #### Configurar Access para `/negocio/recuperar` (una sola vez)
 
-Hay que hacer **dos cambios manuales** en **Zero Trust → Access → Applications** para el panel del negocio, y un tercero para las demos (ver la tabla de rutas de Access más arriba):
+Hay que hacer **dos cambios manuales** en **Zero Trust → Access → Applications** para el panel del negocio, y **tres aplicaciones más** para las demos y su API (ver la tabla de rutas de Access más arriba):
 
 1. Editar la aplicación existente **`ERP Multitenant — Negocio`**. Dejar el dominio `erp.fenloravisual.com` y cambiar su **Path** de `negocio*` a **`negocio/recuperar*`**. Conservar su política *Allow* con **Email** igual al correo del negocio y método **One-time PIN**, y conservar su **AUD** (`42dd0fd8004d4dfd59461cbed3e42dccd34f995b4a692cd14873852b80fea302`). No actives Google ni toques otras aplicaciones.
 2. Crear una aplicación nueva con nombre, por ejemplo, `ERP Multitenant — Panel negocio`, dominio `erp.fenloravisual.com` y Path **`negocio*`**, con política **Bypass** y regla *Include = Everyone*. Esta app es la que permite que `/negocio` cargue sin pedir PIN; la regla más específica (`negocio/recuperar*`) sigue mandando en la recuperación.
@@ -211,7 +236,7 @@ Abre la URL de producción **https://erp.fenloravisual.com** (o la de `workers.d
 
 ### 5. Dominio en Cloudflare
 
-El dominio de producción ya configurado es **erp.fenloravisual.com** (Cloudflare → Workers & Pages → `erp-multitenant` → Domains & Routes). Cloudflare creó el DNS automáticamente. Las demos comparten este dominio y viven en **`/demo/<token>`**; no hace falta crear otro subdominio ni otro Worker.
+El dominio de producción ya configurado es **erp.fenloravisual.com** (Cloudflare → Workers & Pages → `erp-multitenant` → Domains & Routes). Cloudflare creó el DNS automáticamente. Las demos comparten este dominio y viven en **`/demo/<token>`**; no hace falta crear otro subdominio ni otro Worker. Las rutas API que usa la demo son **`/api/demo/<token>`** y **`/api/demo/<token>/lead`**, y están en el mismo Worker. No modificar el comodín `*.fenloravisual.com` ni el custom domain existente.
 
 ### Preview local del Worker
 
