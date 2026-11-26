@@ -1,4 +1,5 @@
-// Datos del prototipo del Super Admin. Todo es demostrativo y se guarda en localStorage.
+// Catálogos base del Super Admin. Los tenants y las demos reales viven en Neon;
+// estos datos solo alimentan los selectores y el generador de demos.
 
 export const SECTIONS = [
   { id: "dashboard", label: "Panel de control", icon: "◈", group: "Centro de control" },
@@ -10,7 +11,7 @@ export const SECTIONS = [
   { id: "localization", label: "Localización fiscal", icon: "⌘", group: "Configuración" },
   { id: "branding", label: "Marca y white-label", icon: "✦", group: "Configuración" },
   { id: "modules", label: "Módulos y versiones", icon: "▤", group: "Configuración" },
-  { id: "demos", label: "Fábrica de demos", icon: "▶", group: "Configuración" },
+  { id: "demos", label: "Demos", icon: "▶", group: "Configuración" },
   { id: "security", label: "Seguridad y auditoría", icon: "⚿", group: "Confianza" },
   { id: "operations", label: "Operaciones", icon: "⌁", group: "Confianza" },
   { id: "support", label: "Soporte y éxito", icon: "☏", group: "Crecimiento" },

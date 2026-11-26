@@ -2,16 +2,13 @@
 
 import { useState } from "react";
 import {
-  USERS_SEED, LANGUAGES, TRANSLATIONS_SEED, MODULES, DEMOS,
+  USERS_SEED, LANGUAGES, TRANSLATIONS_SEED, MODULES,
 } from "../lib/data";
 import {
   Panel, Stat, Btn, Tag, Table, Progress, Modal, Drawer, Tabs, Field, Toggle, SectionHead,
 } from "./ui";
 
 const money = (n) => "$ " + Number(n).toLocaleString("es-CO");
-const today = () => new Date().toISOString().slice(0, 10);
-const addDays = (d) => { const x = new Date(); x.setDate(x.getDate() + d); return x.toISOString().slice(0, 10); };
-const slug = (s) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 /* ─────────────────────────── Usuarios e identidad ─────────────────────────── */
 
@@ -358,262 +355,52 @@ export function Modules({ ctx }) {
   </>;
 }
 
-/* ─────────────────────────── Fábrica de demos ─────────────────────────── */
+/* ─────────────────────────── Demos reales ─────────────────────────── */
 
 export function Demos({ ctx }) {
-  const { demos, setDemos, tenants, setTenants, leads, setLeads, setSection, toast } = ctx;
-  const [filter, setFilter] = useState("todos");
-  const [wizard, setWizard] = useState(false);
-  const [step, setStep] = useState(0);
-  const [preview, setPreview] = useState(null);
-  const [previewTour, setPreviewTour] = useState(0);
-  const [generated, setGenerated] = useState(null);
-  const [showLead, setShowLead] = useState(false);
-  const [form, setForm] = useState({ demoId: DEMOS[0].id, prospect: "", size: "mediana", expiry: 7, color: "#6366f1", language: "es", modules: [] });
-  const [leadForm, setLeadForm] = useState({ name: "", email: "", company: "", phone: "" });
+  const { demoLinks, refreshDemoLinks } = ctx;
+  const [q, setQ] = useState("");
 
-  const template = DEMOS.find((d) => d.id === form.demoId) || DEMOS[0];
-  const activeTour = preview ? DEMOS.find((d) => d.id === (preview.demoId || preview.id)) : null;
-
-  const openWizard = (demoId) => {
-    const d = DEMOS.find((x) => x.id === demoId) || DEMOS[0];
-    setForm({ ...form, demoId: d.id, modules: [...d.modules] });
-    setStep(0); setWizard(true);
-  };
-  const finish = () => {
-    const code = Math.random().toString(36).slice(2, 6);
-    const g = {
-      id: "g" + Date.now(), demoId: template.id, name: template.name, icon: template.icon,
-      color: form.color, prospect: form.prospect || "Cliente demostrativo", size: form.size,
-      language: form.language, modules: form.modules,
-      link: `https://demo.tuempresa.com/${slug(template.name)}-${code}`,
-      created: today(), expires: addDays(form.expiry), visits: 0, steps: 0, leads: 0, status: "Activa",
-    };
-    setDemos([g, ...demos]); setWizard(false); setGenerated(g);
-    toast("Demo generada con enlace compartible");
-  };
-  const copy = (link) => {
-    try { navigator.clipboard?.writeText(link); } catch (e) { /* entorno sin permisos */ }
-    toast("Enlace copiado al portapapeles");
-  };
-  const openPreview = (d) => {
-    setPreview(d); setPreviewTour(0); setShowLead(false);
-    if (d.link) setDemos(demos.map((x) => x.id === d.id ? { ...x, visits: x.visits + 1 } : x));
-  };
-  const saveLead = () => {
-    if (!leadForm.email.includes("@")) return toast("Escribe un correo válido");
-    setLeads([{ ...leadForm, demo: activeTour?.name || "Demo", date: today() }, ...leads]);
-    setLeadForm({ name: "", email: "", company: "", phone: "" }); setShowLead(false);
-    toast("Lead capturado y enviado a Ventas");
-  };
-  const convert = (d) => {
-    const t = {
-      id: "t" + Date.now(), name: d.prospect || d.name, niche: d.name, plan: "crecimiento",
-      country: "Colombia", city: "—", users: 3, status: "Prueba", mode: "Pool", mrr: 0,
-      health: 65, color: d.color || "#6366f1", created: today(),
-    };
-    setTenants([t, ...tenants]);
-    setDemos(demos.map((x) => x.id === d.id ? { ...x, status: "Convertida" } : x));
-    setPreview(null); setSection("tenants");
-    toast("Demo convertida en negocio real");
-  };
-  const deleteDemo = (id) => { setDemos(demos.filter((d) => d.id !== id)); toast("Demo eliminada"); };
-
-  const tourSteps = activeTour ? [
-    { icon: "◈", title: "Panel de resultados", text: `Resumen de ventas, cobros e inventario de la demo de ${activeTour.name.toLowerCase()}. El cliente ve impacto, no solo formularios.` },
-    { icon: "▤", title: "Módulos activos", text: activeTour.modules.join(" · ") },
-    { icon: "➤", title: "Flujo estrella", text: activeTour.flow },
-    { icon: "▦", title: "Datos semilla", text: activeTour.seed },
-    { icon: "◎", title: "Clientes y cobros", text: "Cartera, facturas y recordatorios automáticos con la marca del prospecto." },
-    { icon: "✓", title: "Listo para convertir", text: "Con un clic esta demo se convierte en un negocio real con sus datos y configuración." },
-  ] : [];
+  const all = Array.isArray(demoLinks) ? demoLinks : [];
+  const rows = all.filter((d) =>
+    `${d.business_name} ${d.niche_name || ""} ${d.token}`.toLowerCase().includes(q.toLowerCase())
+  );
+  const visits = all.reduce((sum, d) => sum + Number(d.visits || 0), 0);
+  const withLead = all.filter((d) => d.lead).length;
+  const converted = all.filter((d) => d.status === "Convertida").length;
 
   return <>
-    <SectionHead eyebrow="Configuración" title="Fábrica de demos" description="Genera demos ultra completas por nicho en segundos: datos semilla, flujo guiado, enlace con caducidad y captura de lead. Las 14 demos del catálogo están listas."
-      actions={<a className="btn btn-primary" href="/demos">Abrir centro de demos reales</a>} />
-    <div className="callout">Las demos de abajo son el catálogo visual. Para crear una demo navegable con datos reales, abrirla, enviarla por WhatsApp y convertirla en cliente, usa el <a href="/demos"><b>centro de demos reales</b></a>.</div>
+    <SectionHead
+      eyebrow="Configuración"
+      title="Demos"
+      description="Enlaces públicos creados en Neon con datos operativos por nicho. Cada enlace abre un panel interactivo; aquí no hay catálogo decorativo."
+      actions={<>
+        <Btn icon="↻" onClick={refreshDemoLinks}>Actualizar</Btn>
+        <a className="btn btn-primary" href="/demos">Crear y gestionar demos</a>
+      </>}
+    />
     <div className="stat-grid">
-      <Stat label="Demos generadas" value={demos.length} icon="▶" />
-      <Stat label="Visitas totales" value={demos.reduce((s, d) => s + d.visits, 0)} icon="◎" tone="green" />
-      <Stat label="Leads capturados" value={leads.length + 38} icon="✉" tone="amber" />
-      <Stat label="Conversión demo → negocio" value={`${demos.length ? Math.round((demos.filter((d) => d.status === "Convertida").length / demos.length) * 100) : 0}%`} icon="↗" tone="rose" />
+      <Stat label="Demos creadas" value={all.length} icon="▶" />
+      <Stat label="Visitas registradas" value={visits} icon="◎" tone="green" />
+      <Stat label="Con lead" value={withLead} icon="✉" tone="amber" />
+      <Stat label="Convertidas a negocio" value={converted} icon="↗" tone="rose" />
     </div>
-    <div className="filter-row">
-      {[["todos", "Todas"], ["pequeña", "Pequeña"], ["mediana", "Mediana"], ["grande", "Grande"]].map(([k, label]) => (
-        <button key={k} className={`chip ${filter === k ? "on" : ""}`} onClick={() => setFilter(k)}>{label}</button>
-      ))}
-      <span style={{ marginLeft: "auto", color: "#8b93a1", fontSize: 11 }}>{DEMOS.filter((d) => filter === "todos" || d.size === filter).length} demos disponibles</span>
-    </div>
-    <div className="demo-grid">
-      {DEMOS.filter((d) => filter === "todos" || d.size === filter).map((d) => (
-        <div className="demo-card" key={d.id}>
-          <div className="demo-top">
-            <span className="demo-icon" style={{ background: d.color }}>{d.icon}</span>
-            <div><h3>{d.name}</h3><small>{d.size === "todos" ? "Todos los tamaños" : `Empresa ${d.size}`} · {d.modules.length} módulos</small></div>
-          </div>
-          <div className="demo-desc">{d.notes}</div>
-          <div className="demo-flow">➤ {d.flow}</div>
-          <div className="demo-chips">{d.modules.map((m) => <span key={m}>{m}</span>)}</div>
-          <div className="demo-kpi">{d.kpi} <span style={{ color: "#8b93a1", fontWeight: 500, fontSize: 10 }}>· {d.seed}</span></div>
-          <div className="demo-actions">
-            <Btn size="xs" icon="▶" onClick={() => openWizard(d.id)}>Generar demo</Btn>
-            <Btn size="xs" onClick={() => { setPreview({ ...d, demoId: d.id }); setPreviewTour(0); setShowLead(false); }}>Vista previa</Btn>
-          </div>
-        </div>
-      ))}
-    </div>
-
-    <Panel title="Demos generadas" subtitle="Enlaces activos con seguimiento de visitas y captura de lead" actions={<Btn size="sm" icon="↻" onClick={() => toast("Métricas actualizadas")}>Actualizar</Btn>} bodyClass="tight">
-      {demos.length === 0 ? <div className="empty-state"><span>▶</span><b>Aún no hay demos generadas</b><p>Elige un nicho arriba y genera tu primer enlace.</p></div> :
-        <Table columns={[
-          { key: "name", label: "Demo", render: (d) => <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span className="demo-icon" style={{ background: d.color, width: 26, height: 26, fontSize: 13 }}>{d.icon}</span><div><b>{d.prospect}</b><div style={{ color: "#8b93a1", fontSize: 10 }}>{d.name}</div></div></div> },
-          { key: "link", label: "Enlace", render: (d) => <button className="mono link-btn" onClick={() => copy(d.link)}>{d.link.replace("https://demo.tuempresa.com/", "demo.tuempresa.com/")} ⧉</button> },
-          { key: "expires", label: "Caduca", render: (d) => d.expires },
+    <Panel title="Demos publicadas" subtitle="Eliminar, crear y convertir se hace en el centro de demos" bodyClass="tight">
+      <div className="filter-row" style={{ padding: "14px 16px 0" }}>
+        <input placeholder="Buscar por negocio, nicho o token…" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: 320 }} />
+        <span style={{ marginLeft: "auto", color: "#8b93a1", fontSize: 11 }}>{rows.length} demos</span>
+      </div>
+      {rows.length === 0
+        ? <div className="empty-state"><span>▶</span><b>Aún no hay demos creadas</b><p>Crea la primera desde el centro de demos.</p></div>
+        : <Table columns={[
+          { key: "business", label: "Negocio", render: (d) => <div><b>{d.business_name}</b><div style={{ color: "#8b93a1", fontSize: 10 }}>{d.niche_name || d.niche_id}</div></div> },
+          { key: "data", label: "Datos", render: (d) => `${d.products ?? 0} productos · ${d.customers ?? 0} clientes · ${d.orders ?? 0} pedidos` },
+          { key: "link", label: "Enlace", render: (d) => <a className="mono link-btn" href={`/demo/${d.token}`} target="_blank" rel="noreferrer">/demo/{d.token} ⧉</a> },
           { key: "visits", label: "Visitas", align: "right" },
-          { key: "leads", label: "Leads", align: "right" },
+          { key: "lead", label: "Lead", render: (d) => d.lead ? <Tag tone="green" dot>{d.lead.name}</Tag> : <span style={{ color: "#8b93a1" }}>—</span> },
           { key: "status", label: "Estado", render: (d) => <Tag tone={d.status === "Activa" ? "green" : "indigo"} dot>{d.status}</Tag> },
-          { key: "acc", label: "", align: "right", render: (d) => <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
-            <Btn size="xs" onClick={() => openPreview(d)}>Abrir</Btn>
-            {d.status !== "Convertida" && <Btn size="xs" tone="primary" onClick={() => convert(d)}>Convertir</Btn>}
-            <Btn size="xs" tone="danger" onClick={() => deleteDemo(d.id)}>✕</Btn>
-          </div> },
-        ]} rows={demos} />}
+          { key: "expires", label: "Caduca", render: (d) => String(d.expires_at || "").slice(0, 10) },
+        ]} rows={rows} />}
     </Panel>
-
-    <Panel title="Embudo de demos" subtitle="Del enlace al negocio activo">
-      <div className="funnel">
-        {[["Enlaces generados", demos.length + 26], ["Visitas", 184], ["Recorridos completos", 96], ["Leads capturados", leads.length + 38], ["Convertidos en negocio", demos.filter((d) => d.status === "Convertida").length + 4]].map(([label, value], i, arr) => (
-          <div className="funnel-step" key={label}>
-            <div className="funnel-bar" style={{ width: `${100 - i * 15}%`, background: ["#6366f1", "#818cf8", "#a5b4fc", "#34d399", "#f59e0b"][i] }}>
-              <b>{value}</b><span>{label}</span>
-            </div>
-            {i < arr.length - 1 && <div className="funnel-arrow">↓</div>}
-          </div>
-        ))}
-      </div>
-    </Panel>
-
-    {/* Asistente de 4 pasos */}
-    <Modal open={wizard} onClose={() => setWizard(false)} title="Nueva demo" subtitle="4 pasos: nicho → configuración → branding → generar" width={760}>
-      <div className="wizard-steps">{[0, 1, 2, 3].map((i) => <i key={i} className={`wizard-step ${i <= step ? (i === step ? "on" : "done") : ""}`} />)}</div>
-      {step === 0 && <>
-        <h3 className="wizard-title">1. Elige el nicho</h3>
-        <p className="wizard-help">Las 14 demos traen datos semilla, flujo estrella y módulos activos listos para mostrar.</p>
-        <div className="wizard-niches">
-          {DEMOS.map((d) => <button key={d.id} className={`wizard-niche ${form.demoId === d.id ? "on" : ""}`} onClick={() => setForm({ ...form, demoId: d.id, modules: [...d.modules] })}>
-            <span style={{ background: d.color }}>{d.icon}</span><b>{d.name}</b><small>{d.seed}</small>
-          </button>)}
-        </div>
-      </>}
-      {step === 1 && <>
-        <h3 className="wizard-title">2. Configura la demo</h3>
-        <div className="two-col">
-          <Field label="Tamaño del negocio"><select value={form.size} onChange={(e) => setForm({ ...form, size: e.target.value })}><option>pequeña</option><option>mediana</option><option>grande</option><option>todos</option></select></Field>
-          <Field label="Idioma de la demo"><select value={form.language} onChange={(e) => setForm({ ...form, language: e.target.value })}><option value="es">Español</option><option value="en">English</option><option value="pt">Português</option></select></Field>
-        </div>
-        <Field label="Caducidad del enlace"><select value={form.expiry} onChange={(e) => setForm({ ...form, expiry: Number(e.target.value) })}><option value="7">7 días</option><option value="14">14 días</option><option value="30">30 días</option></select></Field>
-        <div className="callout">Módulos que se mostrarán: <b>{form.modules.join(", ") || template.modules.join(", ")}</b></div>
-        <div className="demo-chips">{template.modules.map((m) => <span key={m} className={form.modules.includes(m) ? "chip on" : "chip"} onClick={() => setForm({ ...form, modules: form.modules.includes(m) ? form.modules.filter((x) => x !== m) : [...form.modules, m] })}>{m}</span>)}</div>
-        <div className="callout green">Flujo estrella: {template.flow}</div>
-      </>}
-      {step === 2 && <>
-        <h3 className="wizard-title">3. Personaliza para el prospecto</h3>
-        <Field label="Nombre del prospecto o empresa"><input value={form.prospect} onChange={(e) => setForm({ ...form, prospect: e.target.value })} placeholder="Ej. Farmacias Sol" /></Field>
-        <Field label="Color de marca"><input type="color" value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} style={{ height: 38, padding: 3 }} /></Field>
-        <Toggle label="Capturar lead antes de entrar" hint="Formulario de nombre, correo, empresa y teléfono" value={true} onChange={() => {}} />
-        <Toggle label="Tour guiado automático" hint="6 pasos con resumen de resultados al final" value={true} onChange={() => {}} />
-      </>}
-      {step === 3 && <>
-        <h3 className="wizard-title">4. Revisa y genera</h3>
-        <div className="wizard-summary">
-          <div><small>Nicho</small><b>{template.name}</b></div>
-          <div><small>Prospecto</small><b>{form.prospect || "Cliente demostrativo"}</b></div>
-          <div><small>Módulos</small><b>{form.modules.length}</b></div>
-          <div><small>Caducidad</small><b>{form.expiry} días</b></div>
-          <div><small>Idioma</small><b>{form.language.toUpperCase()}</b></div>
-          <div><small>Flujo estrella</small><b>{template.flow}</b></div>
-        </div>
-        <div className="callout green">Se creará un tenant efímero con los datos semilla de la demo. Podrás compartir el enlace, medir visitas y convertirlo en negocio real.</div>
-      </>}
-      <div className="wizard-actions">
-        {step > 0 && <Btn onClick={() => setStep(step - 1)}>← Atrás</Btn>}
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-          <Btn onClick={() => setWizard(false)}>Cancelar</Btn>
-          {step < 3 ? <Btn tone="primary" onClick={() => setStep(step + 1)}>Siguiente →</Btn>
-            : <Btn tone="primary" icon="✓" onClick={finish}>Generar demo</Btn>}
-        </div>
-      </div>
-    </Modal>
-
-    {/* Enlace generado */}
-    <Modal open={!!generated} onClose={() => setGenerated(null)} title="Demo lista para compartir" subtitle={generated ? `${generated.name} · ${generated.prospect}` : ""}>
-      {generated && <>
-        <div className="callout green"><b>Enlace activo.</b> Caduca el {generated.expires}. Cada visita y lead quedan registrados en el panel de Demos.</div>
-        <div className="link-box"><span className="mono">{generated.link}</span><Btn size="xs" tone="primary" onClick={() => copy(generated.link)}>Copiar</Btn></div>
-        <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
-          <Btn icon="▶" tone="primary" onClick={() => { openPreview(generated); setGenerated(null); }}>Abrir demo</Btn>
-          <Btn icon="✉" onClick={() => toast("Correo de presentación enviado al prospecto")}>Enviar por correo</Btn>
-          <Btn icon="⧉" onClick={() => { const c = { ...generated, id: "g" + Date.now(), prospect: generated.prospect + " (copia)", link: generated.link + "-copia", visits: 0 }; setDemos([c, ...demos]); toast("Demo clonada"); setGenerated(null); }}>Clonar</Btn>
-          <Btn icon="⇅" onClick={() => { convert(generated); setGenerated(null); }}>Convertir en negocio</Btn>
-        </div>
-      </>}
-    </Modal>
-
-    {/* Vista previa de la demo dentro del ERP */}
-    <Modal open={!!preview} onClose={() => setPreview(null)} title={activeTour ? `Demo: ${activeTour.name}` : "Demo"} subtitle={preview?.prospect || "Vista previa del ERP del cliente"} width={1000}>
-      {preview && activeTour && <>
-        <div className="preview-hero" style={{ "--brand": preview.color || "#6366f1" }}>
-          <span className="bp-logo" style={{ background: preview.color || "#6366f1" }}>{(preview.prospect || "D").slice(0, 1).toUpperCase()}</span>
-          <div><b>{preview.prospect || "Cliente demostrativo"}</b><small>{activeTour.name} · {preview.size || activeTour.size} · datos de ejemplo</small></div>
-          <Tag tone="green" dot>Entorno de demostración</Tag>
-        </div>
-        <div className="preview-kpis">
-          <div><small>{activeTour.kpi}</small><b>Vista general</b></div>
-          <div><small>{activeTour.modules.length} módulos</small><b>Activos</b></div>
-          <div><small>6 pasos</small><b>Tour guiado</b></div>
-        </div>
-        <div className="preview-body">
-          <div className="preview-modules">
-            <h4>Módulos activos</h4>
-            {activeTour.modules.map((m, i) => <div key={m} className={previewTour === Math.min(i, 5) ? "on" : ""}>▤ {m}</div>)}
-          </div>
-          <div className="preview-main">
-            <h4>Así se verá el flujo estrella</h4>
-            <div className="flow-line">{activeTour.flow.split("→").map((s, i, arr) => <span key={i}>{s.trim()}{i < arr.length - 1 && <i>→</i>}</span>)}</div>
-            <div className="callout">Datos semilla: {activeTour.seed}</div>
-            <div className="preview-table">
-              <div className="pt-head"><span>Registro</span><span>Estado</span><span>Valor</span></div>
-              {[["Pedido #1042", "Completado", money(1280000)], ["Pedido #1043", "En proceso", money(840000)], ["Pedido #1044", "Pendiente", money(396000)], ["Cliente destacado", "Activo", "—"]].map((r) => (
-                <div key={r[0]}><span>{r[0]}</span><span><Tag tone={r[1] === "Completado" || r[1] === "Activo" ? "green" : "amber"}>{r[1]}</Tag></span><span>{r[2]}</span></div>
-              ))}
-            </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-              <Btn size="sm" onClick={() => setShowLead(!showLead)} icon="✉">Capturar lead</Btn>
-              {preview.link && <Btn size="sm" onClick={() => convert(preview)} tone="primary" icon="⇅">Convertir en negocio</Btn>}
-            </div>
-            {showLead && <div className="lead-form">
-              <div className="two-col"><Field label="Nombre"><input value={leadForm.name} onChange={(e) => setLeadForm({ ...leadForm, name: e.target.value })} /></Field>
-                <Field label="Empresa"><input value={leadForm.company} onChange={(e) => setLeadForm({ ...leadForm, company: e.target.value })} /></Field></div>
-              <div className="two-col"><Field label="Correo"><input type="email" value={leadForm.email} onChange={(e) => setLeadForm({ ...leadForm, email: e.target.value })} /></Field>
-                <Field label="Teléfono"><input value={leadForm.phone} onChange={(e) => setLeadForm({ ...leadForm, phone: e.target.value })} /></Field></div>
-              <Btn tone="primary" size="sm" onClick={saveLead}>Guardar lead</Btn>
-            </div>}
-          </div>
-          <div className="tour-card">
-            <div className="tour-count">Paso {previewTour + 1} de {tourSteps.length}</div>
-            <div className="tour-icon">{tourSteps[previewTour].icon}</div>
-            <h4>{tourSteps[previewTour].title}</h4>
-            <p>{tourSteps[previewTour].text}</p>
-            <div className="tour-dots">{tourSteps.map((_, i) => <i key={i} className={i === previewTour ? "on" : ""} onClick={() => setPreviewTour(i)} />)}</div>
-            <div style={{ display: "flex", gap: 6 }}>
-              <Btn size="xs" disabled={previewTour === 0} onClick={() => setPreviewTour(previewTour - 1)}>← Atrás</Btn>
-              <Btn size="xs" tone="primary" onClick={() => previewTour < tourSteps.length - 1 ? setPreviewTour(previewTour + 1) : toast("Recorrido completado")}>
-                {previewTour < tourSteps.length - 1 ? "Siguiente →" : "Finalizar"}
-              </Btn>
-            </div>
-          </div>
-        </div>
-      </>}
-    </Modal>
   </>;
 }

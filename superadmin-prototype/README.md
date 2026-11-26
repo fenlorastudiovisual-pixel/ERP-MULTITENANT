@@ -253,10 +253,10 @@ npm run preview
 - **Panel de control** con KPIs globales, ingresos, módulos más usados, actividad y alertas.
 - **Tenants**: filtros, alta asistida, detalle con pestañas, clonar, suspender y cambiar modo de aislamiento.
 - **Planes y funciones**: editor visual de módulos (incluido / add-on / no disponible), límites, feature flags, precio y simulador.
-- **Demos reales**: centro en `/demos` con **14 nichos** y datos operativos completos, enlace público `/demo/<token>` interactivo, envío por WhatsApp con `wa.me`, captura de lead y conversión a tenant. El botón masivo convierte los 15 negocios de muestra (Samjuro excluido). La sección antigua de «Fábrica de demos» queda como catálogo visual y enlaza al centro real.
+- **Demos reales**: centro en `/demos` con **14 nichos** y datos operativos completos, enlace público `/demo/<token>` interactivo, envío por WhatsApp con `wa.me`, captura de lead y conversión a tenant. El botón masivo genera 15 demos de muestra (Samjuro excluido). La sección «Demos» de la consola muestra solo las demos guardadas en `demo_links`; no hay catálogo decorativo ni botón para crear tenants falsos.
 - **Configuración**: usuarios/roles/SSO, idiomas y traducciones, localización fiscal, white-label con vista previa en vivo, módulos y versiones.
 - **Operaciones**: seguridad y auditoría, observabilidad, cuotas y colas, soporte con SLA, integraciones, migración de datos, BI global y ajustes del sistema.
-- **Persistencia**: Neon (JSONB con RLS) con respaldo en `localStorage`. En Configuración del sistema → Datos del prototipo se pueden restablecer.
+- **Persistencia**: Neon (JSONB con RLS) es la fuente de verdad; `localStorage` solo es una copia temporal mientras carga. Ya no hay botón que restablezca datos de ejemplo: los tenants se crean al convertir una demo y el tenant de prueba es Samjuro (`t16`).
 
 ## Estructura
 

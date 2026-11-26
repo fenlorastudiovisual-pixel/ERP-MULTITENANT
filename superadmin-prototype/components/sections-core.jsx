@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import {
-  ACTIVITY, ALERTS, REVENUE, NICHE_REVENUE, MODULE_USAGE, MODULES, PLAN_SEED,
+  MODULES,
 } from "../lib/data";
 import {
   Panel, Stat, Btn, Tag, Table, Bars, Donut, Progress, Modal, Drawer, Tabs, Field, Toggle, SectionHead,
@@ -11,70 +11,108 @@ import {
 const money = (n) => "$ " + Number(n).toLocaleString("es-CO");
 
 export function Dashboard({ ctx }) {
-  const { tenants, demos, setSection } = ctx;
-  const active = tenants.filter((t) => t.status === "Activo").length;
-  const mrr = tenants.reduce((s, t) => s + t.mrr, 0);
-  const users = tenants.reduce((s, t) => s + t.users, 0);
+  const { tenants, demoLinks, setSection } = ctx;
+  const list = Array.isArray(tenants) ? tenants : [];
+  const demos = Array.isArray(demoLinks) ? demoLinks : [];
+
+  const active = list.filter((t) => t.status === "Activo").length;
+  const trial = list.filter((t) => t.status === "Prueba").length;
+  const mrr = list.reduce((s, t) => s + Number(t.mrr || 0), 0);
+  const users = list.reduce((s, t) => s + Number(t.users || 0), 0);
+  const withLead = demos.filter((d) => d.lead).length;
+
+  const alerts = [];
+  const inactive = list.filter((t) => t.status !== "Activo");
+  if (inactive.length) alerts.push({
+    text: `${inactive.length} negocio(s) sin estado Activo: ${inactive.map((t) => t.name).join(", ")}.`,
+    action: "Ver tenants", section: "tenants",
+  });
+  if (withLead) alerts.push({
+    text: `${withLead} demo(s) con lead capturado pendiente de conversión.`,
+    action: "Ver demos", section: "demos",
+  });
+
+  const activity = [
+    ...demos.slice(0, 5).map((d) => ({ icon: "▶", who: "Demo creada", target: d.business_name, when: String(d.created_at || "").slice(0, 10) })),
+    ...list.slice(0, 5).map((t) => ({ icon: "▦", who: "Negocio registrado", target: t.name, when: String(t.created || "").slice(0, 10) })),
+  ].slice(0, 6);
+
+  const mrrBars = list.map((t) => ({ label: String(t.name).slice(0, 9), value: Number(t.mrr || 0) }));
+  const nicheCounts = list.reduce((acc, t) => {
+    const key = t.niche || "Sin nicho";
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const donut = Object.entries(nicheCounts).map(([label, value]) => ({
+    label, value: Math.round((value / (list.length || 1)) * 100),
+  }));
+  const statusRows = ["Activo", "Prueba", "Suspendido"].map((label) => ({
+    label, value: list.filter((t) => t.status === label).length,
+    pct: Math.round((list.filter((t) => t.status === label).length / (list.length || 1)) * 100),
+  }));
+
   return (
     <>
       <SectionHead
         eyebrow="Centro de control"
-        title="Buenos días, María"
-        description="Vista global de la plataforma: negocios, ingresos, salud operativa y demos en curso."
+        title="Panel de control"
+        description="Vista global de los negocios y demos guardados en Neon."
         actions={<>
-          <Btn icon="＋" onClick={() => setSection("demos")}>Nueva demo</Btn>
+          <a className="btn" href="/demos">Nueva demo</a>
           <Btn tone="primary" icon="◈" onClick={() => setSection("bi")}>Ver reportes</Btn>
         </>}
       />
-      <div className="callout amber">
-        <b>{ALERTS.length} avisos requieren tu atención.</b> TransAndes está al 92% de su cuota de API
-        y hay 3 facturas con pago fallido.{" "}
-        <button className="btn btn-xs" onClick={() => setSection("operations")}>Revisar ahora →</button>
+      <div className={"callout" + (alerts.length ? " amber" : " green")}>
+        <b>{alerts.length ? alerts.length + " avisos requieren tu atención." : "Sin avisos pendientes."}</b>
+        {alerts[0] ? " " + alerts[0].text : ""}{" "}
+        <button className="btn btn-xs" onClick={() => setSection(alerts[0]?.section || "tenants")}>Revisar ahora →</button>
       </div>
       <div className="stat-grid">
-        <Stat label="Ingresos recurrentes (MRR)" value={money(mrr)} delta="+12.4%" icon="¤" hint="vs. mes anterior" />
-        <Stat label="Negocios activos" value={active} delta={`+${tenants.filter(t => t.status === "Prueba").length} en prueba`} icon="▦" tone="green" />
-        <Stat label="Usuarios en la plataforma" value={users.toLocaleString("es-CO")} delta="+8.1%" icon="◎" tone="amber" />
-        <Stat label="Demos generadas (30 días)" value={demos.length + 26} delta="+19" icon="▶" tone="rose" hint="14 nichos disponibles" />
+        <Stat label="Ingresos recurrentes (MRR)" value={money(mrr)} icon="¤" hint="Suma de los tenants" />
+        <Stat label="Negocios activos" value={active} delta={`+${trial} en prueba`} icon="▦" tone="green" />
+        <Stat label="Usuarios en la plataforma" value={users.toLocaleString("es-CO")} icon="◎" tone="amber" />
+        <Stat label="Demos publicadas" value={demos.length} icon="▶" tone="rose" hint="Creadas en Neon" />
       </div>
       <div className="chart-grid">
-        <Panel title="Ingresos recurrentes" subtitle="Últimos 12 meses (millones COP)" actions={<Btn size="sm">12 meses ▾</Btn>}>
-          <Bars data={REVENUE} height={168} color="#6366f1" />
+        <Panel title="MRR por negocio" subtitle="Suma del plan contratado por tenant">
+          {mrrBars.length ? <Bars data={mrrBars} height={168} color="#6366f1" /> : <div className="empty-state"><span>▦</span><b>Sin negocios registrados</b></div>}
         </Panel>
-        <Panel title="Ingresos por nicho" subtitle="Distribución actual">
-          <Donut items={NICHE_REVENUE.map((n, i) => ({ ...n, color: ["#6366f1", "#22c55e", "#f59e0b", "#ec4899", "#94a3b8"][i] }))} />
+        <Panel title="Negocios por nicho" subtitle="Distribución real de tenants">
+          {donut.length
+            ? <Donut items={donut.map((n, i) => ({ ...n, color: ["#6366f1", "#22c55e", "#f59e0b", "#ec4899", "#94a3b8"][i % 5] }))} />
+            : <div className="empty-state"><span>◈</span><b>Sin datos de nicho</b></div>}
         </Panel>
       </div>
       <div className="two-col">
-        <Panel title="Actividad reciente" subtitle="Lo último en la plataforma" actions={<button className="btn btn-sm" onClick={() => setSection("security")}>Ver auditoría</button>}>
+        <Panel title="Actividad reciente" subtitle="Demos y negocios guardados" actions={<button className="btn btn-sm" onClick={() => setSection("demos")}>Ver demos</button>}>
           <div className="activity">
-            {ACTIVITY.map((a, i) => (
+            {activity.length ? activity.map((a, i) => (
               <div className="activity-item" key={i}>
-                <span className={`activity-dot ${a.type}`}>{a.type === "tenant" ? "▦" : a.type === "alert" ? "!" : a.type === "demo" ? "▶" : a.type === "plan" ? "◐" : "☏"}</span>
-                <div><b>{a.who}</b> {a.what} <b>{a.target}</b><p>{a.when}</p></div>
+                <span className={`activity-dot ${a.icon === "▶" ? "demo" : "tenant"}`}>{a.icon}</span>
+                <div><b>{a.who}</b> · <b>{a.target}</b><p>{a.when}</p></div>
                 <time>{a.when}</time>
               </div>
-            ))}
+            )) : <div className="empty-state"><span>◷</span><b>Sin actividad registrada</b></div>}
           </div>
         </Panel>
         <div>
-          <Panel title="Módulos más usados" subtitle="Adopción en todos los tenants">
-            {MODULE_USAGE.map((m) => (
+          <Panel title="Estado de los negocios" subtitle="Distribución real por estado">
+            {statusRows.map((m) => (
               <div key={m.label} style={{ marginBottom: 12 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 5 }}>
-                  <span>{m.label}</span><b>{m.value}%</b>
+                  <span>{m.label}</span><b>{m.value} · {m.pct}%</b>
                 </div>
-                <Progress value={m.value} />
+                <Progress value={m.pct} />
               </div>
             ))}
           </Panel>
           <Panel title="Alertas">
-            {ALERTS.map((a, i) => (
-              <div className={`alert-item ${a.level}`} key={i}>
+            {alerts.length ? alerts.map((a, i) => (
+              <div className="alert-item medium" key={i}>
                 <i className="alert-bar" /><span>{a.text}</span>
-                <button className="btn btn-xs" onClick={() => setSection(a.level === "low" ? "languages" : "operations")}>{a.action}</button>
+                <button className="btn btn-xs" onClick={() => setSection(a.section)}>{a.action}</button>
               </div>
-            ))}
+            )) : <div className="callout green">No hay alertas: todos los negocios están activos y no hay leads pendientes.</div>}
           </Panel>
         </div>
       </div>

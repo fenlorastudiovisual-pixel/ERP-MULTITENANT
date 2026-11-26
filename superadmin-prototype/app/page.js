@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { SECTIONS, GROUPS, TENANTS_SEED, PLAN_SEED, DEMOS, USERS_SEED, LANGUAGES, TRANSLATIONS_SEED } from "../lib/data";
+import { SECTIONS, GROUPS, TENANTS_SEED, PLAN_SEED, USERS_SEED, LANGUAGES, TRANSLATIONS_SEED } from "../lib/data";
 import { Dashboard, Tenants, Plans, Billing } from "../components/sections-core";
 import { Users, Languages, Localization, Branding, Modules, Demos } from "../components/sections-config";
 import { Security, Operations, Support, Integrations, Data, BI, Settings } from "../components/sections-ops";
@@ -9,7 +9,6 @@ import { Security, Operations, Support, Integrations, Data, BI, Settings } from 
 const STORAGE_KEY = "erp-multitenant-superadmin-v1";
 const STATE_VERSION = 2;
 const PRODUCT_NAME = "ERP Multitenant";
-const DEMO_BASE_URL = "https://erp.fenloravisual.com/demo/";
 
 const COMPONENTS = {
   dashboard: Dashboard, tenants: Tenants, plans: Plans, billing: Billing,
@@ -18,26 +17,18 @@ const COMPONENTS = {
   support: Support, integrations: Integrations, data: Data, bi: BI, settings: Settings,
 };
 
-const addDays = (d) => { const x = new Date(); x.setDate(x.getDate() + d); return x.toISOString().slice(0, 10); };
-const today = () => new Date().toISOString().slice(0, 10);
-
-const seedDemos = () => [
-  { id: "g1", demoId: "d7", name: "Farmacia", icon: "✚", color: "#22d3ee", prospect: "Farmacias Sol", size: "mediana", language: "es", modules: ["Ventas", "Lotes", "Vencimientos"],
-    link: "https://demo.tuempresa.com/farmacia-sol-a91c", created: addDays(-3), expires: addDays(11), visits: 14, steps: 9, leads: 2, status: "Activa" },
-  { id: "g2", demoId: "d4", name: "Manufactura (textil / metal)", icon: "⚙", color: "#a78bfa", prospect: "Textiles del Sur", size: "grande", language: "es", modules: ["BOM", "MRP", "Calidad"],
-    link: "https://demo.tuempresa.com/textiles-del-sur-4b82", created: addDays(-8), expires: addDays(6), visits: 31, steps: 18, leads: 5, status: "Activa" },
-  { id: "g3", demoId: "d2", name: "Restaurante / cafetería", icon: "☕", color: "#f59e0b", prospect: "Café Aurora", size: "pequeña", language: "es", modules: ["POS", "Mesas", "Caja"],
-    link: "https://demo.tuempresa.com/cafe-aurora-7fd2", created: addDays(-21), expires: addDays(-7), visits: 26, steps: 14, leads: 3, status: "Convertida" },
-];
+// Solo el tenant de prueba real se mantiene como respaldo local cuando no hay Neon.
+const REAL_TENANT_SEED = TENANTS_SEED.filter((t) => t.id === "t16");
+const SEED_TENANT_IDS = new Set(TENANTS_SEED.filter((t) => t.id !== "t16").map((t) => t.id));
 
 const initialData = () => ({
-  tenants: TENANTS_SEED,
+  tenants: REAL_TENANT_SEED,
   plans: PLAN_SEED,
-  demos: seedDemos(),
+  demos: [],
   users: USERS_SEED,
   languages: LANGUAGES,
   translations: TRANSLATIONS_SEED,
-  leads: [{ name: "Ejemplo Lead", email: "lead@ejemplo.com", company: "Farmacias Sol", phone: "", demo: "Farmacia", date: today() }],
+  leads: [],
   branding: {
     product: "ERP Multitenant", color: "#6366f1", accent: "#22c55e", font: "Inter", mode: "Claro",
     domain: "erp.tuempresa.com", whiteLabel: true, brandedEmails: true,
@@ -46,34 +37,29 @@ const initialData = () => ({
   __stateVersion: STATE_VERSION,
 });
 
-// Los estados guardados antes del rebrand conservaban la marca anterior: se normalizan al cargar.
+// Los estados guardados por el prototipo mezclaban negocios semilla con tenants reales.
+// Al cargar, se descarta todo lo que no viene de Neon ni de una demo convertida.
 const normalizeState = (saved) => {
-  if (!saved || typeof saved !== "object") return initialData();
   const base = initialData();
+  if (!saved || typeof saved !== "object") return base;
   const state = { ...base, ...saved };
-  if ((saved.__stateVersion || 1) < STATE_VERSION) {
-    state.branding = { ...base.branding, ...(saved.branding || {}), product: PRODUCT_NAME };
-    state.settings = { ...base.settings, ...(saved.settings || {}), platform: PRODUCT_NAME };
-    const demos = Array.isArray(saved.demos) ? saved.demos : base.demos;
-    state.demos = demos.map((d) => ({
-      ...d,
-      link: typeof d.link === "string"
-        ? d.link.replace(/https:\/\/demo\.(?:samjuro\.com\.co|tuempresa\.com)\//g, DEMO_BASE_URL)
-        : d.link,
-    }));
-    const tenants = Array.isArray(saved.tenants) ? saved.tenants : base.tenants;
-    const sampleClient = base.tenants.find((t) => t.id === "t16");
-    state.tenants = tenants.some((t) => /^samjuro$/i.test(t.name || "")) || !sampleClient
-      ? tenants
-      : [...tenants, sampleClient];
-    state.__stateVersion = STATE_VERSION;
-  }
-  // Los negocios creados antes de añadir el correo heredan el de la semilla.
-  const tenants = Array.isArray(state.tenants) ? state.tenants : base.tenants;
-  state.tenants = tenants.map((tenant) => ({
+
+  state.branding = { ...base.branding, ...(saved.branding || {}), product: PRODUCT_NAME };
+  state.settings = { ...base.settings, ...(saved.settings || {}), platform: PRODUCT_NAME };
+
+  const savedTenants = Array.isArray(saved.tenants) ? saved.tenants : [];
+  const realTenants = savedTenants.filter((t) => !SEED_TENANT_IDS.has(String(t?.id)));
+  const hasSamjuro = realTenants.some((t) => String(t?.id) === "t16");
+  state.tenants = hasSamjuro ? realTenants : [...REAL_TENANT_SEED, ...realTenants];
+  state.tenants = state.tenants.map((tenant) => ({
     ...tenant,
     email: tenant.email || base.tenants.find((item) => item.id === tenant.id)?.email || "",
   }));
+
+  // Las demos y leads reales viven en demo_links, no en este JSON.
+  state.demos = [];
+  state.leads = [];
+  state.__stateVersion = STATE_VERSION;
   return state;
 };
 
@@ -94,6 +80,16 @@ export default function Page() {
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const [loggingIn, setLoggingIn] = useState(false);
+  const [demoLinks, setDemoLinks] = useState([]);
+
+  const refreshDemoLinks = async () => {
+    try {
+      const res = await fetch("/api/demos", { credentials: "include" });
+      if (!res.ok) return;
+      const json = await res.json();
+      if (Array.isArray(json.demos)) setDemoLinks(json.demos);
+    } catch { /* la consola sigue funcionando sin el listado */ }
+  };
 
   // Cargar estado: primero localStorage (respaldo inmediato), luego Neon si hay sesión.
   useEffect(() => {
@@ -116,6 +112,7 @@ export default function Page() {
         if (!me.ok) return;
         const meJson = await me.json();
         setSessionUser(meJson.user);
+        await refreshDemoLinks();
 
         const res = await fetch("/api/state", { credentials: "include" });
         if (!alive) return;
@@ -242,6 +239,7 @@ export default function Page() {
     tenants: data.tenants, setTenants: setValue("tenants"),
     plans: data.plans, setPlans: setValue("plans"),
     demos: data.demos, setDemos: setValue("demos"),
+    demoLinks, setDemoLinks, refreshDemoLinks,
     users: data.users, setUsers: setValue("users"),
     languages: data.languages, setLanguages: setValue("languages"),
     translations: data.translations, setTranslations: setValue("translations"),
@@ -252,7 +250,7 @@ export default function Page() {
     detailTab, setDetailTab,
     toast, resetData,
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [data, section, selectedTenant, detailTab]);
+  }), [data, section, selectedTenant, detailTab, demoLinks]);
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();

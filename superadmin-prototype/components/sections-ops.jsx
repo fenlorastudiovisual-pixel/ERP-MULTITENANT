@@ -365,64 +365,76 @@ export function Data({ ctx }) {
 /* ─────────────────────────── Reportes y BI ─────────────────────────── */
 
 export function BI({ ctx }) {
-  const { demos, tenants, toast } = ctx;
+  const { demoLinks, tenants, refreshDemoLinks } = ctx;
   const [tab, setTab] = useState("global");
-  const revenue = [42, 48, 45, 55, 61, 58, 67, 72, 70, 81, 88, 96];
+  const list = Array.isArray(tenants) ? tenants : [];
+  const demos = Array.isArray(demoLinks) ? demoLinks : [];
+
+  const mrr = list.reduce((s, t) => s + Number(t.mrr || 0), 0);
+  const users = list.reduce((s, t) => s + Number(t.users || 0), 0);
+  const visits = demos.reduce((s, d) => s + Number(d.visits || 0), 0);
+  const withLead = demos.filter((d) => d.lead).length;
+  const converted = demos.filter((d) => d.status === "Convertida").length;
+
+  const nicheCounts = demos.reduce((acc, d) => {
+    const key = d.niche_name || d.niche_id || "Sin nicho";
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const nicheRows = Object.entries(nicheCounts).map(([label, value]) => ({
+    label, value, pct: Math.round((value / (demos.length || 1)) * 100),
+  }));
   const funnel = [
-    ["Demo generada", 184], ["Visita al enlace", 142], ["Tour completado", 96], ["Lead capturado", 38], ["Negocio activo", 12],
+    ["Demos creadas", demos.length],
+    ["Visitas registradas", visits],
+    ["Con lead", withLead],
+    ["Convertidas", converted],
   ];
+
   return <>
-    <SectionHead eyebrow="Crecimiento" title="Reportes y BI global" description="Métricas agregadas y anonimizadas de todos los negocios, embudos de conversión y reportes programados."
-      actions={<>
-        <Btn icon="⇩" onClick={() => toast("Reporte exportado a Excel")}>Exportar</Btn>
-        <Btn tone="primary" icon="＋" onClick={() => toast("Nuevo reporte creado")}>Nuevo reporte</Btn>
-      </>} />
+    <SectionHead eyebrow="Crecimiento" title="Reportes y BI global" description="Métricas calculadas sobre los tenants y las demos guardadas en Neon."
+      actions={<Btn icon="↻" onClick={refreshDemoLinks}>Actualizar datos</Btn>} />
     <Tabs tabs={[{ id: "global", label: "Visión global" }, { id: "embudos", label: "Embudos" }, { id: "reportes", label: "Reportes guardados" }]} value={tab} onChange={setTab} />
     {tab === "global" && <>
       <div className="stat-grid">
-        <Stat label="MRR total" value={money(tenants.reduce((s, t) => s + t.mrr, 0))} delta="+12.4%" icon="¤" />
-        <Stat label="Negocios activos" value={tenants.filter((t) => t.status === "Activo").length} icon="▦" tone="green" />
-        <Stat label="Usuarios activos" value={tenants.reduce((s, t) => s + t.users, 0).toLocaleString("es-CO")} icon="◎" tone="amber" />
-        <Stat label="NPS global" value="64" delta="+5" icon="♡" tone="rose" />
+        <Stat label="MRR total" value={money(mrr)} icon="¤" hint="Suma de tenants" />
+        <Stat label="Negocios activos" value={list.filter((t) => t.status === "Activo").length} icon="▦" tone="green" />
+        <Stat label="Usuarios" value={users.toLocaleString("es-CO")} icon="◎" tone="amber" />
+        <Stat label="Leads en demos" value={withLead} icon="♡" tone="rose" />
       </div>
       <div className="chart-grid">
-        <Panel title="Evolución de ingresos" subtitle="Últimos 12 meses"><Bars data={revenue} height={170} /></Panel>
-        <Panel title="Negocios por plan"><Donut items={[
-          { label: "Inicio", value: 28, color: "#0ea5a4" }, { label: "Crecimiento", value: 38, color: "#6366f1" },
-          { label: "Empresa", value: 26, color: "#8b5cf6" }, { label: "Global", value: 8, color: "#0f172a" },
-        ]} /></Panel>
-      </div>
-      <div className="two-col">
-        <Panel title="Módulos más adoptados"><Bars data={[{ label: "Vtas", value: 94 }, { label: "Inv", value: 87 }, { label: "Fac", value: 81 }, { label: "CRM", value: 68 }, { label: "Mfg", value: 41 }]} height={140} color="#22c55e" /></Panel>
-        <Panel title="Indicadores de salud"><div className="mini-list">
-          <li><span>✓</span> Uptime global <b style={{ marginLeft: "auto" }}>99.97%</b></li>
-          <li><span>✓</span> SLA de soporte <b style={{ marginLeft: "auto" }}>94%</b></li>
-          <li><span>✓</span> Facturación cobrada <b style={{ marginLeft: "auto" }}>96.4%</b></li>
-          <li><span>!</span> Churn mensual <b style={{ marginLeft: "auto" }}>2.1%</b></li>
-        </div></Panel>
+        <Panel title="MRR por negocio" subtitle="Plan contratado por tenant">
+          {list.length ? <Bars data={list.map((t) => ({ label: String(t.name).slice(0, 9), value: Number(t.mrr || 0) }))} height={170} /> : <div className="empty-state"><span>▦</span><b>Sin negocios registrados</b></div>}
+        </Panel>
+        <Panel title="Demos por nicho" subtitle="Distribución real de las demos creadas">
+          {nicheRows.length
+            ? <Donut items={nicheRows.map((n, i) => ({ ...n, color: ["#6366f1", "#22c55e", "#f59e0b", "#ec4899", "#94a3b8"][i % 5] }))} />
+            : <div className="empty-state"><span>▶</span><b>Sin demos creadas</b></div>}
+        </Panel>
       </div>
     </>}
     {tab === "embudos" && <div className="two-col">
-      <Panel title="Demo → alta → activación → retención">
+      <Panel title="Embudo real de demos">
         <div className="funnel">{funnel.map(([label, value], i) => (
-          <div className="funnel-step" key={label}><div className="funnel-bar" style={{ width: `${100 - i * 14}%`, background: ["#6366f1", "#818cf8", "#a5b4fc", "#34d399", "#f59e0b"][i] }}><b>{value}</b><span>{label}</span></div>{i < funnel.length - 1 && <div className="funnel-arrow">↓</div>}</div>
+          <div className="funnel-step" key={label}>
+            <div className="funnel-bar" style={{ width: `${100 - i * 14}%`, background: ["#6366f1", "#818cf8", "#a5b4fc", "#34d399"][i] }}>
+              <b>{value}</b><span>{label}</span>
+            </div>
+            {i < funnel.length - 1 && <div className="funnel-arrow">↓</div>}
+          </div>
         ))}</div>
       </Panel>
-      <Panel title="Conversión por nicho">
-        {[["Retail", 18], ["Restaurante", 14], ["Distribuidora", 22], ["Manufactura", 26], ["Clínica", 16], ["Servicios", 12]].map(([n, v]) => (
-          <div key={n} style={{ marginBottom: 11 }}><div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 4 }}><span>{n}</span><b>{v}%</b></div><Progress value={v * 3} /></div>
-        ))}
-        <div className="callout">{demos.length} demos generadas desde el Super Admin. El nicho con mejor conversión es Manufactura.</div>
+      <Panel title="Demos por nicho">
+        {nicheRows.length ? nicheRows.map((n) => (
+          <div key={n.label} style={{ marginBottom: 11 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 4 }}><span>{n.label}</span><b>{n.value} · {n.pct}%</b></div>
+            <Progress value={n.pct} />
+          </div>
+        )) : <div className="empty-state"><span>▶</span><b>Sin demos creadas</b></div>}
       </Panel>
     </div>}
-    {tab === "reportes" && <Panel title="Reportes guardados y programados" bodyClass="tight">
-      <Table columns={[{ key: "name", label: "Reporte" }, { key: "scope", label: "Alcance" }, { key: "freq", label: "Frecuencia" }, { key: "dest", label: "Destino" }, { key: "acc", label: "", align: "right" }]}
-        rows={[
-          { id: 1, name: "Resumen mensual de ingresos", scope: "Global", freq: "Mensual", dest: "maria@fenlora.com" },
-          { id: 2, name: "Salud de clientes", scope: "Todos los negocios", freq: "Semanal", dest: "equipo-exito@fenlora.com" },
-          { id: 3, name: "Uso de módulos", scope: "Anonimizado", freq: "Mensual", dest: "producto@fenlora.com" },
-          { id: 4, name: "Embudo de demos", scope: "Ventas", freq: "Diario", dest: "ventas@fenlora.com" },
-        ].map((r) => ({ ...r, acc: <div style={{ display: "flex", gap: 4 }}><Btn size="xs" onClick={() => toast(`${r.name} ejecutado`)}>Ejecutar</Btn><Btn size="xs" onClick={() => toast(`${r.name} editado`)}>Editar</Btn></div> }))} />
+    {tab === "reportes" && <Panel title="Reportes guardados">
+      <div className="callout">No hay reportes programados. Las métricas de esta pantalla se calculan en el momento desde Neon.</div>
     </Panel>}
   </>;
 }
@@ -430,14 +442,14 @@ export function BI({ ctx }) {
 /* ─────────────────────────── Configuración del sistema ─────────────────────────── */
 
 export function Settings({ ctx }) {
-  const { settings, setSettings, toast, resetData } = ctx;
+  const { settings, setSettings, toast } = ctx;
   const [tab, setTab] = useState("generales");
   const set = (k, v) => setSettings({ ...settings, [k]: v });
   return <>
     <SectionHead eyebrow="Sistema" title="Configuración del sistema" description="Parámetros globales, feature flags, colas de correo, almacenamiento, despliegues y modo mantenimiento."
       actions={<Btn tone="primary" icon="✓" onClick={() => toast("Configuración guardada")}>Guardar todo</Btn>} />
     <div className="callout amber"><b>Modo demostración.</b> Los cambios se guardan en el navegador (localStorage). No hay backend real conectado todavía.</div>
-    <Tabs tabs={[{ id: "generales", label: "Parámetros" }, { id: "flags", label: "Feature flags" }, { id: "infra", label: "Infraestructura" }, { id: "versiones", label: "Versiones" }, { id: "demo", label: "Datos del prototipo" }]} value={tab} onChange={setTab} />
+    <Tabs tabs={[{ id: "generales", label: "Parámetros" }, { id: "flags", label: "Feature flags" }, { id: "infra", label: "Infraestructura" }, { id: "versiones", label: "Versiones" }, { id: "datos", label: "Datos" }]} value={tab} onChange={setTab} />
     {tab === "generales" && <div className="two-col">
       <Panel title="Parámetros globales">
         <Field label="Nombre de la plataforma"><input value={settings.platform} onChange={(e) => set("platform", e.target.value)} /></Field>
@@ -486,14 +498,14 @@ export function Settings({ ctx }) {
           { id: 3, v: "v2.13.0", date: "02 nov 2026", notes: "Nuevo constructor de reportes", state: "Anterior" },
         ].map((r) => ({ ...r, state: <Tag tone={r.state === "Producción" ? "green" : "slate"}>{r.state}</Tag>, acc: r.state === "Producción" ? <Btn size="xs" onClick={() => toast("Rollback a v2.13.8 iniciado")}>Rollback</Btn> : <Btn size="xs" onClick={() => toast("Versión promovida a producción")}>Promover</Btn> }))} />
     </Panel>}
-    {tab === "demo" && <div className="two-col">
-      <Panel title="Datos del prototipo" subtitle="Todo se guarda en el almacenamiento local del navegador">
-        <div className="callout">Este prototipo usa datos simulados. Restablecer devuelve tenants, planes, demos, usuarios, idiomas y configuración a su estado inicial.</div>
-        <Btn tone="danger" icon="↻" onClick={() => { resetData(); toast("Datos del prototipo restablecidos"); }}>Restablecer datos iniciales</Btn>
+    {tab === "datos" && <div className="two-col">
+      <Panel title="Fuente de datos" subtitle="Neon es la fuente de verdad">
+        <div className="callout green">Tenants, demos, leads y configuración se guardan en Neon. El navegador solo mantiene una copia temporal mientras carga; recargar la página vuelve a leer la base de datos.</div>
+        <div className="callout">No hay botón de restablecimiento: eso repoblaría negocios de ejemplo que ya no son tenants reales.</div>
       </Panel>
-      <Panel title="Acerca de este prototipo">
-        <div className="kv"><div><small>Versión</small><b>0.1.0</b></div><div><small>Secciones</small><b>17</b></div><div><small>Demos incluidas</small><b>14</b></div><div><small>Stack</small><b>Next 16 · React 19</b></div></div>
-        <div className="callout green">Diseño nuevo e independiente. No se reutilizó código ni datos del ERP anterior.</div>
+      <Panel title="Acerca de este ERP">
+        <div className="kv"><div><small>Entorno</small><b>Producción</b></div><div><small>Base de datos</small><b>Neon Postgres</b></div><div><small>Aplicación</small><b>Cloudflare Workers</b></div><div><small>Stack</small><b>Next 16 · React 19</b></div></div>
+        <div className="callout green">ERP multitenant independiente. Samjuro es el tenant de prueba; las demos son enlaces públicos con datos operativos generados desde Neon.</div>
       </Panel>
     </div>}
   </>;

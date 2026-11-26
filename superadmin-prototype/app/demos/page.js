@@ -130,7 +130,7 @@ export default function DemoCenter() {
           <Btn onClick={() => create(TENANTS_SEED.filter((t) => t.id !== "t16").map((t) => ({
             nicheId: nicheFor(t.niche), businessName: t.name,
           })))} disabled={busy}>
-            Crear las 15 demos de los negocios
+            Generar 15 demos de muestra
           </Btn>
         </div>
         <p className="auth-subtitle" style={{ marginTop: 10 }}>
