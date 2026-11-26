@@ -11,6 +11,7 @@
     "db:inspect": "node database/inspect.mjs",
     "db:migrate-state": "node database/migrate-state.mjs",
     "db:backfill-email": "node database/backfill-tenant-email.mjs",
+    "db:migrate-auth": "node database/migrate-auth-hybrid.mjs",
     "db:verify-owner": "node database/verify-owner-sync.mjs",
     "db:test-owner": "node database/test-owner-sync.mjs",
     "db:role": "node database/setup-app-role.mjs",

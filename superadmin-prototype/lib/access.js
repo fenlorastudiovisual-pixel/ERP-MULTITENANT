@@ -3,7 +3,7 @@
 //
 // Hay dos aplicaciones Access distintas sobre el mismo dominio:
 //   - CF_ACCESS_AUD        -> consola del Super Admin (todo el sitio)
-//   - CF_ACCESS_TENANT_AUD -> panel del negocio (/negocio*), regla más específica
+//   - CF_ACCESS_TENANT_AUD -> recuperación del panel (/negocio/recuperar*), regla más específica
 // Un token de una aplicación NO sirve para la otra.
 
 import { createRemoteJWKSet, jwtVerify } from "jose";

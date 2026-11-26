@@ -19,7 +19,17 @@ alter table auth.users add column if not exists active boolean not null default 
 alter table auth.users add column if not exists failed_attempts integer not null default 0;
 alter table auth.users add column if not exists locked_until timestamptz;
 alter table auth.users add column if not exists last_login_at timestamptz;
+-- Cambiar la contraseña rota este valor y, con él, todas las sesiones abiertas.
+alter table auth.users add column if not exists tenant_session_epoch uuid not null default gen_random_uuid();
 create unique index if not exists auth_users_email_lower_uidx on auth.users (lower(email));
+
+-- MFA opcional (TOTP) para los dueños de los negocios.
+create table if not exists public.tenant_mfa (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  secret text not null,
+  enabled boolean not null default false,
+  created_at timestamptz not null default now()
+);
 
 -- ── Funciones de contexto de sesión ─────────────────────────────────────────
 -- La aplicación establece: SET LOCAL app.tenant_id = '<uuid>'; al abrir la transacción del tenant.
@@ -446,6 +456,9 @@ create policy superadmin_all on public.demo_leads for all to public
 drop policy if exists superadmin_all on public.profiles;
 create policy superadmin_all on public.profiles for all to public
   using (public.is_superadmin()) with check (public.is_superadmin());
+drop policy if exists superadmin_all on public.tenant_mfa;
+create policy superadmin_all on public.tenant_mfa for all to public
+  using (public.is_superadmin()) with check (public.is_superadmin());
 drop policy if exists superadmin_all on public.platform_config;
 create policy superadmin_all on public.platform_config for all to public
   using (public.is_superadmin()) with check (public.is_superadmin());
@@ -510,6 +523,7 @@ alter table public.demo_scenarios force row level security;
 alter table public.demo_tenants force row level security;
 alter table public.demo_leads force row level security;
 alter table public.profiles force row level security;
+alter table public.tenant_mfa force row level security;
 alter table public.platform_config force row level security;
 alter table public.languages force row level security;
 alter table public.translations force row level security;

@@ -6,11 +6,19 @@ import { accessEnabled, getAccessEmail } from "./access.js";
 
 const encoder = new TextEncoder();
 export const SESSION_COOKIE = "erp_session";
+export const TENANT_SESSION_COOKIE = "erp_tenant_session";
 export const SESSION_MAX_AGE = 8 * 60 * 60; // 8 horas
 const SESSION_VERSION = 1;
-const PBKDF2_ITERATIONS = 10000;
+// Recomendación actual de OWASP para PBKDF2-HMAC-SHA256. Los hashes antiguos
+// siguen verificándose; se actualizan solos cuando el usuario entra.
+const PBKDF2_ITERATIONS = 600000;
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_MINUTES = 15;
+
+export function needsRehash(stored) {
+  const iterations = Number(String(stored || "").split("$")[1]);
+  return Boolean(iterations) && iterations < PBKDF2_ITERATIONS;
+}
 
 function toBase64Url(input) {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
@@ -177,10 +185,11 @@ export async function registerFailedAttempt(userId, attempts, locked) {
   ]);
 }
 
-export async function registerSuccessfulLogin(userId) {
+export async function registerSuccessfulLogin(userId, upgradedHash = null) {
   await runAsSuperAdmin((tx) => [
     tx`update auth.users
-       set failed_attempts = 0, locked_until = null, last_login_at = now()
+       set failed_attempts = 0, locked_until = null, last_login_at = now(),
+           password_hash = coalesce(${upgradedHash}::text, password_hash)
        where id = ${userId}::uuid`,
   ]);
 }
@@ -202,4 +211,97 @@ export function cookieOptions(request) {
     path: "/",
     maxAge: SESSION_MAX_AGE,
   };
+}
+
+// ── Sesión del panel del negocio ──────────────────────────────────────────────
+// Cookie y clave de firma DISTINTAS de las del Super Admin: un token de cliente
+// nunca puede interpretarse como una sesión de plataforma.
+
+async function tenantSessionKey() {
+  const secret = process.env.SUPERADMIN_KEY;
+  if (!secret) throw new Error("SUPERADMIN_KEY no configurada");
+  const root = await crypto.subtle.importKey(
+    "raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+  );
+  const derived = await crypto.subtle.sign("HMAC", root, encoder.encode("erp-tenant-session-v1"));
+  return crypto.subtle.importKey("raw", derived, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+}
+
+export async function createTenantSession({ sub, email, tenantId, role, epoch }) {
+  const now = Math.floor(Date.now() / 1000);
+  const payload = toBase64Url(encoder.encode(JSON.stringify({
+    v: SESSION_VERSION, sub, email, tenant_id: tenantId, role, epoch,
+    iat: now, exp: now + SESSION_MAX_AGE,
+  })));
+  const signature = toBase64Url(
+    await crypto.subtle.sign("HMAC", await tenantSessionKey(), encoder.encode(payload)),
+  );
+  return `${payload}.${signature}`;
+}
+
+export async function readTenantSession(token) {
+  if (!token || typeof token !== "string") return null;
+  const [payload, signature, extra] = token.split(".");
+  if (!payload || !signature || extra) return null;
+  const expected = toBase64Url(
+    await crypto.subtle.sign("HMAC", await tenantSessionKey(), encoder.encode(payload)),
+  );
+  if (!constantTimeEqual(encoder.encode(signature), encoder.encode(expected))) return null;
+  try {
+    const claims = JSON.parse(new TextDecoder().decode(fromBase64Url(payload)));
+    if (claims.v !== SESSION_VERSION || !String(claims.role || "").startsWith("tenant_")) return null;
+    if (!claims.sub || !claims.tenant_id || !claims.epoch || !claims.exp) return null;
+    if (claims.exp <= Math.floor(Date.now() / 1000)) return null;
+    return claims;
+  } catch {
+    return null;
+  }
+}
+
+export function tenantCookieOptions(request) {
+  const secure = new URL(request.url).protocol === "https:";
+  return {
+    httpOnly: true,
+    secure,
+    sameSite: "lax",
+    path: "/negocio",
+    maxAge: SESSION_MAX_AGE,
+  };
+}
+
+export async function getTenantSession(request) {
+  const token = readCookies(request)[TENANT_SESSION_COOKIE];
+  if (!token) return null;
+  try {
+    return await readTenantSession(token);
+  } catch {
+    return null;
+  }
+}
+
+/** Datos de autenticación de cualquier usuario, sin asumir que es Super Admin. */
+export async function findUserByEmail(email) {
+  const results = await runAsSuperAdmin((tx) => tx`
+    select u.id::text, u.email, u.password_hash, u.active,
+           u.failed_attempts, u.locked_until,
+           u.tenant_session_epoch::text as epoch
+    from auth.users u
+    where lower(u.email) = lower(${String(email)})
+  `);
+  return results[0] || null;
+}
+
+export async function getTenantMfa(userId) {
+  const results = await runAsSuperAdmin((tx) => tx`
+    select secret, enabled from public.tenant_mfa where user_id = ${String(userId)}::uuid
+  `);
+  return results[0] || null;
+}
+
+/** Rota el epoch: invalida todas las sesiones abiertas de ese usuario. */
+export async function rotateTenantSession(userId) {
+  await runAsSuperAdmin((tx) => tx`
+    update auth.users set tenant_session_epoch = gen_random_uuid()
+    where id = ${String(userId)}::uuid
+  `);
 }

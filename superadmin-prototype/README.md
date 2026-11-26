@@ -68,6 +68,7 @@ Los scripts disponibles son:
 ```bash
 npm run db:inspect        # conteos por tabla y resumen del estado (solo lectura)
 npm run db:migrate-state  # backfill del JSONB a las tablas operativas (idempotente)
+npm run db:migrate-auth   # sesiones rotables y MFA del panel del negocio (idempotente)
 npm run db:rls-check      # comprueba que RLS se aplica de verdad
 ```
 
@@ -87,7 +88,7 @@ Ese script escribe `DATABASE_APP_URL` en `.env.local` y `.dev.vars` (ninguno se 
 
 `npm run db:check` imprime ambos contextos y `npm run db:rls-check` confirma que una consulta sin contexto devuelve 0 filas.
 
-> **Seguridad:** con Cloudflare Access activo, el ERP valida el JWT de Access en cada petición y comprueba que el correo corresponda a un `super_admin` activo en Neon. Sin Access, el modo de respaldo usa contraseña hasheada con PBKDF2 y cookie firmada con HMAC. `SUPERADMIN_KEY` es secreto del servidor y nunca viaja al navegador.
+> **Seguridad:** con Cloudflare Access activo, la consola valida el JWT de Access en cada petición y comprueba que el correo corresponda a un `super_admin` activo en Neon. Sin Access, el modo de respaldo usa contraseña hasheada con PBKDF2 y cookie firmada con HMAC. `SUPERADMIN_KEY` es secreto del servidor y nunca viaja al navegador. El panel del negocio usa su propia cookie, contraseña con PBKDF2 de 600.000 iteraciones y MFA TOTP opcional; Access solo protege la recuperación.
 
 ## Desplegar en Cloudflare Workers (OpenNext)
 
@@ -124,14 +125,18 @@ El script `database/build-worker.mjs` oculta todos los archivos `.env*` durante 
 
 ### Panel independiente del negocio (`/negocio`)
 
-El negocio **no entra desde la consola del Super Admin**. Tiene su propia puerta en **https://erp.fenloravisual.com/negocio**, protegida por una aplicación de Access distinta.
+El negocio **no entra desde la consola del Super Admin**. Tiene su propia puerta en **https://erp.fenloravisual.com/negocio**.
 
-- El usuario entra con su **One-time PIN** al correo que tenga vinculado a un negocio.
+- El usuario entra con el **correo del negocio y su contraseña**. Cloudflare Access **no interviene** en la entrada diaria.
+- Si no tiene contraseña o la olvidó, abre **https://erp.fenloravisual.com/negocio/recuperar**: ahí sí Cloudflare Access verifica su correo con **One-time PIN** y la app le permite crear o cambiar la contraseña. Access no "entrega" contraseñas: solo confirma quién es el usuario.
+- La contraseña usa PBKDF2 con **600.000 iteraciones**, cookie propia `erp_tenant_session` separada de la del Super Admin y rotación de sesiones al cambiar la contraseña. Opcionalmente se puede activar **MFA con app de autenticación (TOTP)** desde «Seguridad de tu cuenta».
 - El negocio se deduce del correo verificado y de `public.tenant_members`; **no se puede elegir con la URL**.
 - Los datos se leen con el contexto RLS de ese tenant. El Super Admin no puede abrir este panel.
 - Muestra plan, límites, módulos, equipo, salud y facturas del negocio.
 - Cada entrada se registra en `public.audit_log`.
 - La consola del Super Admin ya no tiene el botón «Entrar al negocio».
+
+**Primera vez:** abre `/negocio/recuperar`, verifica tu correo con el PIN, crea la contraseña y después entra normalmente por `/negocio`.
 
 #### Alta de un negocio (flujo correcto)
 
@@ -140,7 +145,7 @@ En **Tenants → Nuevo negocio** se escribe el **nombre** y el **correo del admi
 - El correo se guarda en el negocio (`settings.email` y `app_state`).
 - Se crea o reutiliza su identidad y se le vincula como **owner** del tenant en `public.tenant_members` de forma automática. El mismo correo puede administrar varios negocios; no se duplica su perfil.
 - Si el correo del negocio cambia, el acceso anterior se desactiva automáticamente.
-- El único paso manual restante es permitir ese correo en la política de Access del panel (ver abajo).
+- No hace falta dar de alta el correo en ninguna política de Access para entrar: Access solo se usa en `/negocio/recuperar*`.
 
 Los negocios creados antes de que existiera el campo se completan una sola vez con:
 
@@ -148,19 +153,16 @@ Los negocios creados antes de que existiera el campo se completan una sola vez c
 npm run db:backfill-email
 ```
 
-#### Configurar Access para `/negocio` (una sola vez)
+#### Configurar Access para `/negocio/recuperar` (una sola vez)
 
-En **Zero Trust → Access → Applications → Add an application → Self-hosted**:
+Hay que hacer **dos cambios manuales** en **Zero Trust → Access → Applications**:
 
-1. Application name: `ERP Multitenant — Negocio`.
-2. Domain: `erp.fenloravisual.com` y Path: `negocio*`.
-3. Policy *Allow* con **Email** igual al correo del negocio y método **One-time PIN**. No actives Google.
-4. Guarda y copia el **Application Audience (AUD) Tag** de esta nueva aplicación.
-5. Añade el secreto (lo hace el administrador técnico): `npx wrangler secret put CF_ACCESS_TENANT_AUD`.
+1. Editar la aplicación existente **`ERP Multitenant — Negocio`**. Dejar el dominio `erp.fenloravisual.com` y cambiar su **Path** de `negocio*` a **`negocio/recuperar*`**. Conservar su política *Allow* con **Email** igual al correo del negocio y método **One-time PIN**, y conservar su **AUD** (`42dd0fd8004d4dfd59461cbed3e42dccd34f995b4a692cd14873852b80fea302`). No actives Google ni toques otras aplicaciones.
+2. Crear una aplicación nueva con nombre, por ejemplo, `ERP Multitenant — Panel negocio`, dominio `erp.fenloravisual.com` y Path **`negocio*`**, con política *Allow* para **Everyone**. Esta app es la que permite que `/negocio` cargue sin pedir PIN; la regla más específica (`negocio/recuperar*`) sigue mandando en la recuperación.
 
-La regla de `/negocio` es más específica que la del dominio completo, así que Cloudflare aplica la nueva política solo a esa ruta. El token del Super Admin no sirve aquí y el token del negocio no sirve en la consola.
+No hay que cambiar el secreto `CF_ACCESS_TENANT_AUD`: la app de recuperación conserva su AUD. El token del Super Admin no sirve en el panel y el token de recuperación no sirve en la consola.
 
-Para comprobar la API directamente con la sesión del negocio: `GET /negocio/api/me`.
+Para comprobar la API directamente con la sesión del negocio: `GET /negocio/api/me` (devuelve `authMode: "password"`). Sin sesión devuelve 401.
 
 ### 4. Verificar
 
@@ -187,7 +189,7 @@ npm run preview
 
 - **17 secciones** del Super Admin, agrupadas en Centro de control, Configuración, Confianza, Crecimiento y Sistema.
 - **Panel de control** con KPIs globales, ingresos, módulos más usados, actividad y alertas.
-- **Tenants**: filtros, alta asistida, detalle con pestañas, clonar, suspender, cambiar modo de aislamiento e impersonación auditada.
+- **Tenants**: filtros, alta asistida, detalle con pestañas, clonar, suspender y cambiar modo de aislamiento.
 - **Planes y funciones**: editor visual de módulos (incluido / add-on / no disponible), límites, feature flags, precio y simulador.
 - **Fábrica de demos**: las **14 demos del diseño**, asistente de 4 pasos, enlace con caducidad, vista previa con tour guiado, captura de lead, métricas y conversión a tenant real.
 - **Configuración**: usuarios/roles/SSO, idiomas y traducciones, localización fiscal, white-label con vista previa en vivo, módulos y versiones.

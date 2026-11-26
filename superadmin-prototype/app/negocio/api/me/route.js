@@ -1,10 +1,13 @@
 // Panel independiente del negocio.
-// La identidad del tenant viene del correo verificado por Access y de
-// public.tenant_members. Ningún parámetro de la URL puede elegir el negocio.
+// La identidad viene de la sesión con contraseña; Access solo interviene en la
+// ruta de recuperación. Ningún parámetro de la URL puede elegir el negocio.
 
 import { NextResponse } from "next/server";
 import { dbEnabled, runAsTenant } from "../../../../lib/db";
-import { getTenantAccessEmail, tenantLogoutUrl, tenantAccessEnabled } from "../../../../lib/access";
+import { getTenantAccessEmail } from "../../../../lib/access";
+import {
+  findUserByEmail, getTenantMfa, getTenantSession,
+} from "../../../../lib/auth";
 import { resolveTenantIdentity } from "../../../../lib/tenant-identity";
 
 export const dynamic = "force-dynamic";
@@ -13,13 +16,32 @@ export const runtime = "nodejs";
 export async function GET(request) {
   if (!dbEnabled) return NextResponse.json({ error: "Sin base de datos" }, { status: 503 });
 
-  let email = await getTenantAccessEmail(request);
-  // Solo en local, sin secrets de Access, se puede simular el correo con una cabecera.
-  if (!email && !tenantAccessEnabled && process.env.NODE_ENV !== "production") {
-    email = (request.headers.get("x-dev-email") || "fenlorastudiovisual@gmail.com").toLowerCase();
+  let email = null;
+  let viaSession = false;
+
+  const session = await getTenantSession(request);
+  if (session) {
+    try {
+      const user = await findUserByEmail(session.email);
+      if (user && user.id === session.sub && user.epoch === session.epoch) {
+        email = user.email;
+        viaSession = true;
+      }
+    } catch {
+      email = null;
+    }
+  }
+
+  // Respaldo para el primer acceso y para desarrollo local sin secrets.
+  if (!email) email = await getTenantAccessEmail(request);
+  if (!email && process.env.NODE_ENV !== "production") {
+    email = (request.headers.get("x-dev-email") || "").toLowerCase() || null;
   }
   if (!email) {
-    return NextResponse.json({ error: "Inicia sesión con tu correo para entrar al negocio." }, { status: 401 });
+    return NextResponse.json({
+      error: "Inicia sesión con tu correo y contraseña para entrar al negocio.",
+      needsLogin: true,
+    }, { status: 401 });
   }
 
   try {
@@ -75,19 +97,23 @@ export async function GET(request) {
         values
           (${identity.tenant_id}::uuid, ${identity.user_id}::uuid, ${identity.role},
            'tenant_panel_open', 'tenant', ${identity.tenant_key},
-           ${JSON.stringify({ source: "tenant_panel", email })}::jsonb)
+           ${JSON.stringify({ source: viaSession ? "password_session" : "access", email })}::jsonb)
       `,
     ], identity.role === "owner" ? "tenant_owner" : "tenant_user", identity.user_id);
 
     const tenant = results[0][0] || null;
     if (!tenant) return NextResponse.json({ error: "Sin acceso a este negocio" }, { status: 403 });
 
-    const origin = new URL(request.url).origin;
+    const account = await findUserByEmail(email).catch(() => null);
+    const mfa = account ? await getTenantMfa(account.id).catch(() => null) : null;
+
     return NextResponse.json({
       mode: "neon",
       email,
       role: identity.role,
-      logoutUrl: tenantAccessEnabled ? tenantLogoutUrl(origin) : "/",
+      authMode: viaSession ? "password" : "access",
+      hasPassword: Boolean(account?.password_hash),
+      mfaEnabled: Boolean(mfa?.enabled),
       tenant: {
         id: identity.tenant_key,
         name: tenant.name,
