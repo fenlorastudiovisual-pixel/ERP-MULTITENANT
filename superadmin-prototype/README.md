@@ -257,6 +257,7 @@ npm run preview
 - **Configuración**: usuarios/roles/SSO, idiomas y traducciones, localización fiscal, white-label con vista previa en vivo, módulos y versiones.
 - **Operaciones**: seguridad y auditoría, observabilidad, cuotas y colas, soporte con SLA, integraciones, migración de datos, BI global y ajustes del sistema.
 - **Persistencia**: Neon (JSONB con RLS) es la fuente de verdad; `localStorage` solo es una copia temporal mientras carga. Ya no hay botón que restablezca datos de ejemplo: los tenants se crean al convertir una demo y el tenant de prueba es Samjuro (`t16`).
+- **Sin datos decorativos**: Seguridad, Soporte, Operaciones, Facturación y Módulos ya no muestran negocios, tickets, eventos ni versiones inventados. Si Neon no tiene información, la sección muestra un estado vacío en lugar de rellenarla con ejemplos.
 
 ## Estructura
 
