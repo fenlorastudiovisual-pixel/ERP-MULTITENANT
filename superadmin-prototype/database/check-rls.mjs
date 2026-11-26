@@ -37,12 +37,21 @@ const oneTenant = await sql.transaction((tx) => [
   tx`select count(*)::int as n from public.tenants`,
 ]);
 
+const adminIdentity = await sql.transaction((tx) => [
+  tx`select set_config('app.user_role', 'super_admin', true)`,
+  tx`select u.email, p.global_role
+     from auth.users u left join public.profiles p on p.id = u.id
+     where lower(u.email) = lower('fenlorastudiovisual@gmail.com')`,
+]);
+
 const ok = role[0]?.rolbypassrls === false
   && openState[0]?.n === 0 && adminState[1]?.[0]?.n === 1
-  && openTenants[0]?.n === 0 && oneTenant[1]?.[0]?.n === 1;
+  && openTenants[0]?.n === 0 && oneTenant[1]?.[0]?.n === 1
+  && adminIdentity[1]?.[0]?.global_role === "super_admin";
 
 console.log(`Rol ${role[0]?.name}: BYPASSRLS=${role[0]?.rolbypassrls}`);
 console.log(`app_state sin contexto=${openState[0]?.n} · como super_admin=${adminState[1]?.[0]?.n}`);
 console.log(`tenants sin contexto=${openTenants[0]?.n} · como t1=${oneTenant[1]?.[0]?.n}`);
+console.log(`Identidad del admin: ${adminIdentity[1]?.[0]?.email || "(no encontrada)"} · rol=${adminIdentity[1]?.[0]?.global_role ?? "(ninguno)"}`);
 console.log(ok ? "OK. RLS se aplica correctamente." : "ERROR. Revisa el rol y las policies.");
 process.exit(ok ? 0 : 1);
