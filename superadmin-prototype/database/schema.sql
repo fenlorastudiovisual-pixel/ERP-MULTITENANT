@@ -522,3 +522,23 @@ drop policy if exists superadmin_all on auth.users;
 create policy superadmin_all on auth.users for all to public
   using (public.is_superadmin()) with check (public.is_superadmin());
 alter table auth.users force row level security;
+
+-- Las sesiones de tenant pueden leer el catálogo para mostrar su propio plan.
+drop policy if exists catalog_read on public.plans;
+create policy catalog_read on public.plans for select to public
+  using (public.current_tenant_id() is not null or public.is_superadmin());
+drop policy if exists catalog_read on public.modules;
+create policy catalog_read on public.modules for select to public
+  using (public.current_tenant_id() is not null or public.is_superadmin());
+drop policy if exists catalog_read on public.plan_modules;
+create policy catalog_read on public.plan_modules for select to public
+  using (public.current_tenant_id() is not null or public.is_superadmin());
+drop policy if exists catalog_read on public.plan_limits;
+create policy catalog_read on public.plan_limits for select to public
+  using (public.current_tenant_id() is not null or public.is_superadmin());
+drop policy if exists catalog_read on public.feature_flags;
+create policy catalog_read on public.feature_flags for select to public
+  using (public.current_tenant_id() is not null or public.is_superadmin());
+drop policy if exists catalog_read on public.plan_flags;
+create policy catalog_read on public.plan_flags for select to public
+  using (public.current_tenant_id() is not null or public.is_superadmin());

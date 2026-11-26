@@ -17,8 +17,8 @@ Abrir **http://localhost:8790**. Para comprobar la compilación: `npm run build`
 Abre **https://erp.fenloravisual.com**. El acceso se hace con Cloudflare Access:
 
 1. Cloudflare te muestra la pantalla de inicio de sesión.
-2. Elige **Google** y entra con `fenlorastudiovisual@gmail.com` (o el código que te llega al correo).
-3. Ya estás dentro del panel. **No hay contraseña del ERP que recordar**: la recuperas con Google.
+2. Elige **One-time PIN** y escribe `fenlorastudiovisual@gmail.com`.
+3. Te llega un código al correo; al introducirlo estás dentro del panel. **No hay contraseña del ERP que recordar**.
 
 Para salir, pulsa **Salir** arriba a la derecha. Eso cierra también la sesión de Cloudflare.
 
@@ -28,7 +28,7 @@ El código ya está preparado; falta crear la aplicación en el panel de Cloudfl
 
 1. Entra en **dash.cloudflare.com** → tu cuenta → **Zero Trust** → **Access** → **Applications** → **Add an application** → **Self-hosted**.
 2. Application name: `ERP Multitenant`. Domain: `erp.fenloravisual.com`.
-3. En **Policies**, crea una regla *Allow* con **Email** igual a `fenlorastudiovisual@gmail.com`. Añade también un segundo método (por ejemplo *One-time PIN*) para no depender solo de Google.
+3. En **Policies**, crea una regla *Allow* con **Email** igual a `fenlorastudiovisual@gmail.com` y método **One-time PIN**. No actives Google: afectaría a otros sistemas de la cuenta.
 4. Guarda y copia el **Application Audience (AUD) Tag** y el **team domain** (`https://<tu-equipo>.cloudflareaccess.com`).
 5. Protege también el Worker: **Workers & Pages** → `erp-multitenant` → pestaña **Access** → **Protect this Worker behind Access** → **All traffic**. Así no se puede evadir Access por la URL `workers.dev`.
 6. Añade los secrets y despliega:
@@ -120,6 +120,18 @@ npm run deploy
 ```
 
 El script `database/build-worker.mjs` oculta todos los archivos `.env*` durante el build para que **`DATABASE_URL` y `SUPERADMIN_KEY` no queden horneados en el bundle**. En runtime, los secrets de Cloudflare se leen desde `process.env`.
+
+### Vista del cliente (vista del tenant)
+
+Desde **Tenants** → abre un negocio → **Entrar al negocio**. Se abre `/tenant/t16` (o el id correspondiente):
+
+- La pantalla muestra los datos reales de ese negocio leyendo las tablas de Neon **con su propio contexto RLS** (`app.tenant_id`), no como super admin.
+- Incluye plan contratado, límites, módulos activos, equipo, salud del negocio y facturas.
+- Cada apertura se registra en `public.audit_log` con el correo del Super Admin que la hizo.
+- Si el negocio es recién creado, el botón espera un momento a que el guardado en Neon termine antes de abrir la vista.
+- Si no hay sesión válida de Access, la API devuelve 401 y no se muestra ningún dato.
+
+Para comprobar la API directamente: `GET /api/tenant/t16` con la sesión iniciada.
 
 ### 4. Verificar
 

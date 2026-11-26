@@ -394,4 +394,15 @@ td.right,th.right{text-align:right}
   .content{padding:18px 14px 40px}
   .stat-grid,.plan-grid,.demo-grid,.two-col,.three-col,.chart-grid,.matrix,.limit-grid,.preview-body,.wizard-niches,.template-grid,.wizard-summary,.preview-kpis{grid-template-columns:1fr}
   .searchbox{display:none}
+  .tenant-head{flex-wrap:wrap}
+  .tenant-head .btn{ margin-left:0 }
 }
+
+/* Vista aislada del cliente */
+.tenant-shell{padding:26px 28px 60px;max-width:1500px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+.tenant-head{display:flex;align-items:center;gap:14px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px 20px}
+.tenant-logo{width:52px;height:52px;border-radius:14px;display:grid;place-items:center;color:#fff;font-weight:900;font-size:17px;box-shadow:0 8px 20px rgba(0,0,0,.12)}
+.tenant-eyebrow{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#6366f1;font-weight:800}
+.tenant-head h1{font-size:22px;margin:3px 0 2px}
+.tenant-head p{color:var(--muted);font-size:12px;margin:0}
+@media(max-width:760px){.tenant-shell{padding:18px 14px 40px}}
