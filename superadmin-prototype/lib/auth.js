@@ -2,6 +2,7 @@
 // Solo para servidor (rutas /api/*). Usa WebCrypto para funcionar igual en Node y Workers.
 
 import { runAsSuperAdmin, dbEnabled } from "./db.js";
+import { accessEnabled, getAccessEmail } from "./access.js";
 
 const encoder = new TextEncoder();
 export const SESSION_COOKIE = "erp_session";
@@ -107,20 +108,50 @@ export function readCookies(request) {
   return cookies;
 }
 
+function asAdminIdentity(user) {
+  return user?.active && user.global_role === "super_admin"
+    ? { id: user.id, email: user.email, role: "super_admin" }
+    : null;
+}
+
+async function adminById(id) {
+  const results = await runAsSuperAdmin((tx) => [
+    tx`select u.id, u.email, u.active, p.global_role
+       from auth.users u
+       left join public.profiles p on p.id = u.id
+       where u.id = ${String(id)}::uuid`,
+  ]);
+  return asAdminIdentity(results[0]);
+}
+
+async function adminByEmail(email) {
+  const results = await runAsSuperAdmin((tx) => [
+    tx`select u.id, u.email, u.active, p.global_role
+       from auth.users u
+       left join public.profiles p on p.id = u.id
+       where lower(u.email) = ${String(email).toLowerCase()}`,
+  ]);
+  return asAdminIdentity(results[0]);
+}
+
 export async function getSessionUser(request) {
   if (!dbEnabled) return null;
+
+  // Con Cloudflare Access activo, la identidad la aporta el token verificado.
+  if (accessEnabled) {
+    try {
+      const email = await getAccessEmail(request);
+      return email ? await adminByEmail(email) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Modo de respaldo sin Access: sesión firmada en cookie.
   const claims = await readSession(readCookies(request)[SESSION_COOKIE]);
   if (!claims) return null;
   try {
-    const results = await runAsSuperAdmin((tx) => [
-      tx`select u.id, u.email, u.active, p.global_role
-         from auth.users u
-         left join public.profiles p on p.id = u.id
-         where u.id = ${claims.sub}::uuid`,
-    ]);
-    const user = results[0];
-    if (!user?.active || user.global_role !== "super_admin") return null;
-    return { id: user.id, email: user.email, role: "super_admin" };
+    return await adminById(claims.sub);
   } catch {
     return null;
   }

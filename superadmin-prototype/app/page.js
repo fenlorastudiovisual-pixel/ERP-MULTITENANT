@@ -84,6 +84,7 @@ export default function Page() {
   const [notice, setNotice] = useState("");
   const [sessionUser, setSessionUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
+  const [accessMode, setAccessMode] = useState(false);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
@@ -99,6 +100,12 @@ export default function Page() {
 
     (async () => {
       try {
+        const config = await fetch("/api/auth/config").catch(() => null);
+        if (config?.ok) {
+          const cfg = await config.json();
+          if (alive) setAccessMode(Boolean(cfg.access));
+        }
+
         const me = await fetch("/api/auth/me", { credentials: "include" });
         if (!alive) return;
         if (!me.ok) return;
@@ -210,6 +217,10 @@ export default function Page() {
   };
 
   const logout = async () => {
+    if (accessMode) {
+      window.location.href = "/cdn-cgi/access/logout";
+      return;
+    }
     await fetch("/api/auth/logout", { method: "POST", credentials: "include" }).catch(() => {});
     setSessionUser(null);
     setDbMode(false);
@@ -262,6 +273,19 @@ export default function Page() {
   }
 
   if (!sessionUser) {
+    if (accessMode) {
+      return (
+        <div className="auth-screen">
+          <div className="auth-card">
+            <span className="brand-mark">E</span>
+            <h1>ERP Multitenant</h1>
+            <p className="auth-subtitle">Acceso protegido por Cloudflare Access</p>
+            <p className="auth-access-note">Tu sesión no está activa. Recarga la página para entrar con tu cuenta de Google o con el código enviado a tu correo.</p>
+            <button className="btn btn-primary auth-submit" onClick={() => window.location.reload()}>Volver a entrar</button>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="auth-screen">
         <form className="auth-card" onSubmit={submitLogin}>

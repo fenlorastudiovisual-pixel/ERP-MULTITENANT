@@ -2,6 +2,7 @@
 
 import { NextResponse } from "next/server";
 import { dbEnabled } from "../../../../lib/db";
+import { accessEnabled } from "../../../../lib/access";
 import {
   SESSION_COOKIE,
   cookieOptions,
@@ -24,6 +25,9 @@ function sameOrigin(request) {
 }
 
 export async function POST(request) {
+  if (accessEnabled) {
+    return NextResponse.json({ error: "El acceso se realiza con Cloudflare Access" }, { status: 410 });
+  }
   if (!dbEnabled) return NextResponse.json({ error: "Sin base de datos" }, { status: 503 });
   if (!sameOrigin(request)) return NextResponse.json({ error: "Origen no permitido" }, { status: 403 });
 

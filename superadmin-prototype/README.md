@@ -14,20 +14,34 @@ Abrir **http://localhost:8790**. Para comprobar la compilación: `npm run build`
 
 ## Cómo entrar (producción)
 
-1. Abre **https://erp.fenloravisual.com**.
-2. Correo: **fenlorastudiovisual@gmail.com**.
-3. Contraseña: la que se te entregó al crear el usuario (si la perdiste, restablécela con el comando de abajo).
+Abre **https://erp.fenloravisual.com**. El acceso se hace con Cloudflare Access:
 
-La sesión dura 8 horas. Tras 5 intentos fallidos el acceso se bloquea 15 minutos.
+1. Cloudflare te muestra la pantalla de inicio de sesión.
+2. Elige **Google** y entra con `fenlorastudiovisual@gmail.com` (o el código que te llega al correo).
+3. Ya estás dentro del panel. **No hay contraseña del ERP que recordar**: la recuperas con Google.
 
-Para crear o cambiar la contraseña del Super Admin (en tu terminal, sin subirla a Git):
+Para salir, pulsa **Salir** arriba a la derecha. Eso cierra también la sesión de Cloudflare.
+
+### Activar Cloudflare Access
+
+El código ya está preparado; falta crear la aplicación en el panel de Cloudflare:
+
+1. Entra en **dash.cloudflare.com** → tu cuenta → **Zero Trust** → **Access** → **Applications** → **Add an application** → **Self-hosted**.
+2. Application name: `ERP Multitenant`. Domain: `erp.fenloravisual.com`.
+3. En **Policies**, crea una regla *Allow* con **Email** igual a `fenlorastudiovisual@gmail.com`. Añade también un segundo método (por ejemplo *One-time PIN*) para no depender solo de Google.
+4. Guarda y copia el **Application Audience (AUD) Tag** y el **team domain** (`https://<tu-equipo>.cloudflareaccess.com`).
+5. Protege también el Worker: **Workers & Pages** → `erp-multitenant` → pestaña **Access** → **Protect this Worker behind Access** → **All traffic**. Así no se puede evadir Access por la URL `workers.dev`.
+6. Añade los secrets y despliega:
 
 ```powershell
-$env:ADMIN_EMAIL = "fenlorastudiovisual@gmail.com"
-$env:ADMIN_PASSWORD = "tu-clave-nueva-de-al-menos-12-caracteres"
-npm run db:admin
-Remove-Item Env:ADMIN_EMAIL, Env:ADMIN_PASSWORD
+npx wrangler secret put CF_ACCESS_TEAM_DOMAIN
+npx wrangler secret put CF_ACCESS_AUD
+npm run deploy
 ```
+
+Mientras esos dos secrets no existan, sigue funcionando el login con contraseña. En cuanto se añaden, el formulario queda desactivado.
+
+El plan gratuito de Cloudflare Zero Trust incluye hasta 50 usuarios.
 
 ## Conectar Neon (Postgres gratuito)
 
@@ -51,7 +65,7 @@ Sin `DATABASE_URL` la app sigue funcionando igual con `localStorage`. Con Neon, 
 
 `npm run db:check` imprime ambos contextos para verificarlo.
 
-> **Seguridad:** el acceso usa login real con correo/contraseña. La contraseña se guarda como hash PBKDF2 y la sesión es una cookie firmada con HMAC (`HttpOnly`, `Secure`, `SameSite=Lax`). `SUPERADMIN_KEY` es secreto del servidor y nunca viaja al navegador; `/api/state` verifica la sesión y el rol `super_admin` en cada petición.
+> **Seguridad:** con Cloudflare Access activo, el ERP valida el JWT de Access en cada petición y comprueba que el correo corresponda a un `super_admin` activo en Neon. Sin Access, el modo de respaldo usa contraseña hasheada con PBKDF2 y cookie firmada con HMAC. `SUPERADMIN_KEY` es secreto del servidor y nunca viaja al navegador.
 
 ## Desplegar en Cloudflare Workers (OpenNext)
 
@@ -70,9 +84,11 @@ npm run cf:login
 ```bash
 npx wrangler secret put DATABASE_URL
 npx wrangler secret put SUPERADMIN_KEY
+npx wrangler secret put CF_ACCESS_TEAM_DOMAIN
+npx wrangler secret put CF_ACCESS_AUD
 ```
 
-Pega la misma connection string de Neon y la misma frase secreta que usas en `.env.local`. No existe `NEXT_PUBLIC_SUPERADMIN_KEY`: esa clave pública ya no se usa.
+Pega la misma connection string de Neon y la misma frase secreta que usas en `.env.local`, además del team domain y el AUD tag de tu aplicación Access. No existe `NEXT_PUBLIC_SUPERADMIN_KEY`: esa clave pública ya no se usa.
 
 ### 3. Compilar y desplegar
 
