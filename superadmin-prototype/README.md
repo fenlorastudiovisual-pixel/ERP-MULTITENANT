@@ -45,6 +45,38 @@ El plan gratuito de Cloudflare Zero Trust incluye hasta 50 usuarios.
 
 Nota: esta cuenta no ofrece la opción de proteger el Worker a nivel de Worker. La URL `workers.dev` puede mostrar la interfaz, pero `/api/me` y `/api/state` devuelven 401 sin un token válido de Access y el login por contraseña está desactivado. Para mayor rigor se puede crear una segunda aplicación Access con ese hostname como destino.
 
+#### Las rutas de Access (importante para las demos)
+
+Además de la aplicación de la consola, hay que dejar **cuatro rutas** en Zero Trust → Access → Applications. Cloudflare aplica la regla **más específica**, así que no se pisan:
+
+| Aplicación | Dominio | Path | Política |
+| --- | --- | --- | --- |
+| `ERP Multitenant` (consola) | `erp.fenloravisual.com` | `*` o vacío | Allow: `fenlorastudiovisual@gmail.com`, One-time PIN |
+| `ERP Multitenant — Negocio` | `erp.fenloravisual.com` | `negocio/recuperar*` | Allow: correo del negocio, One-time PIN |
+| `ERP Multitenant — Panel negocio` | `erp.fenloravisual.com` | `negocio*` | Allow: **Everyone** |
+| `ERP Multitenant — Demos` | `erp.fenloravisual.com` | `demo*` | Allow: **Everyone** |
+
+Sin la última aplicación, un prospecto que abra un enlace `/demo/...` verá la pantalla de PIN en vez de la demo. **No actives Google y no toques ninguna otra aplicación de Zero Trust.**
+
+## Demos reales: de un negocio semilla a un cliente
+
+Ya no son tarjetas decorativas. Cada demo es un panel navegable con datos operativos guardados en Neon.
+
+1. Entra en **https://erp.fenloravisual.com/demos** (dentro de la consola del Super Admin).
+2. Elige el nicho, escribe el nombre del negocio y pulsa **Crear demo**. Se generan 24 productos, 26 clientes, 42 pedidos, 24 facturas y los módulos propios del nicho (agenda, obras, producción, envíos, fincas, suscripciones o alertas).
+3. Pulsa **Abrir** para recorrerla: puedes buscar, crear pedidos, avanzar estados y marcar facturas pagadas. Los cambios se guardan en esa demo.
+4. Pulsa **Copiar enlace** o escribe el WhatsApp del cliente y pulsa **Enviar por WhatsApp**. Se abre `wa.me` con un mensaje ya redactado y el enlace `https://erp.fenloravisual.com/demo/<token>`. No se envía nada automáticamente: el mensaje queda listo en el teléfono para que lo envíes tú.
+5. El prospecto explora y pulsa **Solicitar mi acceso**. Eso captura nombre, WhatsApp y correo; en el centro de demos aparece como **Con lead**.
+6. Cuando quieras, pulsa **Convertir en tenant**: la demo se convierte en un negocio real y el correo del lead queda como owner.
+
+El botón **Crear las 15 demos de los negocios** convierte los 15 negocios de muestra (`t1`–`t15`) en demos navegables. Samjuro (`t16`) queda fuera porque es el tenant de prueba real.
+
+Los enlaces son opacos, caducan a los 14 días por defecto y viven en `public.demo_links` con RLS. Los datos se generan con `lib/demo-data.js`. Para crear la tabla en una instalación nueva:
+
+```bash
+npm run db:migrate-demos
+```
+
 ## Conectar Neon (Postgres gratuito)
 
 1. Crea un proyecto en **https://neon.tech** (plan Free, sin tarjeta).
@@ -59,7 +91,7 @@ Nota: esta cuenta no ofrece la opción de proteger el Worker a nivel de Worker. 
 
 5. Reinicia `npm run dev`. El pie del menú debe decir **«Neon conectado»**. Comprueba `http://localhost:8790/api/health`.
 
-Sin `DATABASE_URL` la app sigue funcionando igual con `localStorage`. Con Neon, la consola guarda el estado en `public.app_state` (JSONB) y, en la misma transacción, lo refleja en tablas operativas reales: `plans`, `modules`, `plan_limits`, `tenants`, `subscriptions`, `demo_scenarios`, `demo_tenants`, `languages`, `translations`, `leads`, `profiles` y `platform_config`. La UI sigue leyendo el JSONB, así que no cambia su aspecto ni su forma de guardar.
+Sin `DATABASE_URL` la app sigue funcionando igual con `localStorage`. Con Neon, la consola guarda el estado en `public.app_state` (JSONB) y, en la misma transacción, lo refleja en tablas operativas reales: `plans`, `modules`, `plan_limits`, `tenants`, `subscriptions`, `demo_scenarios`, `demo_tenants`, `demo_links`, `languages`, `translations`, `leads`, `profiles` y `platform_config`. La UI sigue leyendo el JSONB, así que no cambia su aspecto ni su forma de guardar.
 
 ### Normalización y RLS real
 
@@ -69,6 +101,7 @@ Los scripts disponibles son:
 npm run db:inspect        # conteos por tabla y resumen del estado (solo lectura)
 npm run db:migrate-state  # backfill del JSONB a las tablas operativas (idempotente)
 npm run db:migrate-auth   # sesiones rotables y MFA del panel del negocio (idempotente)
+npm run db:migrate-demos  # tabla de demos compartibles con datos reales (idempotente)
 npm run db:rls-check      # comprueba que RLS se aplica de verdad
 ```
 
@@ -155,7 +188,7 @@ npm run db:backfill-email
 
 #### Configurar Access para `/negocio/recuperar` (una sola vez)
 
-Hay que hacer **dos cambios manuales** en **Zero Trust → Access → Applications**:
+Hay que hacer **dos cambios manuales** en **Zero Trust → Access → Applications** para el panel del negocio, y un tercero para las demos (ver la tabla de rutas de Access más arriba):
 
 1. Editar la aplicación existente **`ERP Multitenant — Negocio`**. Dejar el dominio `erp.fenloravisual.com` y cambiar su **Path** de `negocio*` a **`negocio/recuperar*`**. Conservar su política *Allow* con **Email** igual al correo del negocio y método **One-time PIN**, y conservar su **AUD** (`42dd0fd8004d4dfd59461cbed3e42dccd34f995b4a692cd14873852b80fea302`). No actives Google ni toques otras aplicaciones.
 2. Crear una aplicación nueva con nombre, por ejemplo, `ERP Multitenant — Panel negocio`, dominio `erp.fenloravisual.com` y Path **`negocio*`**, con política *Allow* para **Everyone**. Esta app es la que permite que `/negocio` cargue sin pedir PIN; la regla más específica (`negocio/recuperar*`) sigue mandando en la recuperación.
@@ -174,7 +207,7 @@ Abre la URL de producción **https://erp.fenloravisual.com** (o la de `workers.d
 
 ### 5. Dominio en Cloudflare
 
-El dominio de producción ya configurado es **erp.fenloravisual.com** (Cloudflare → Workers & Pages → `erp-multitenant` → Domains & Routes). Cloudflare creó el DNS automáticamente. Las demos pueden ir en `demo.fenloravisual.com` apuntando al mismo Worker o a un Worker separado más adelante.
+El dominio de producción ya configurado es **erp.fenloravisual.com** (Cloudflare → Workers & Pages → `erp-multitenant` → Domains & Routes). Cloudflare creó el DNS automáticamente. Las demos comparten este dominio y viven en **`/demo/<token>`**; no hace falta crear otro subdominio ni otro Worker.
 
 ### Preview local del Worker
 
@@ -191,7 +224,7 @@ npm run preview
 - **Panel de control** con KPIs globales, ingresos, módulos más usados, actividad y alertas.
 - **Tenants**: filtros, alta asistida, detalle con pestañas, clonar, suspender y cambiar modo de aislamiento.
 - **Planes y funciones**: editor visual de módulos (incluido / add-on / no disponible), límites, feature flags, precio y simulador.
-- **Fábrica de demos**: las **14 demos del diseño**, asistente de 4 pasos, enlace con caducidad, vista previa con tour guiado, captura de lead, métricas y conversión a tenant real.
+- **Demos reales**: centro en `/demos` con **14 nichos** y datos operativos completos, enlace público `/demo/<token>` interactivo, envío por WhatsApp con `wa.me`, captura de lead y conversión a tenant. El botón masivo convierte los 15 negocios de muestra (Samjuro excluido). La sección antigua de «Fábrica de demos» queda como catálogo visual y enlaza al centro real.
 - **Configuración**: usuarios/roles/SSO, idiomas y traducciones, localización fiscal, white-label con vista previa en vivo, módulos y versiones.
 - **Operaciones**: seguridad y auditoría, observabilidad, cuotas y colas, soporte con SLA, integraciones, migración de datos, BI global y ajustes del sistema.
 - **Persistencia**: Neon (JSONB con RLS) con respaldo en `localStorage`. En Configuración del sistema → Datos del prototipo se pueden restablecer.
@@ -203,8 +236,11 @@ app/page.js                  Shell: sidebar, topbar, búsqueda, estado y persist
 app/globals.css              Sistema visual
 app/api/state/route.js       GET/PUT/DELETE del estado en Neon
 app/api/health/route.js      Comprobación de conexión
-lib/data.js                  Datos semilla (10 módulos base + 8 extendidos, 15 tenants, 14 demos)
+lib/data.js                  Datos semilla (10 módulos base + 8 extendidos, 16 tenants, 14 plantillas)
+lib/demo-data.js             Generador determinista de datos operativos por nicho
 lib/db.js                    Cliente Neon + contexto RLS por transacción
+app/demos/page.js            Centro de demos del Super Admin
+app/demo/[token]/page.js     Panel público interactivo de la demo
 components/ui.jsx            Componentes reutilizables
 components/sections-core.jsx Dashboard, Tenants, Plans, Billing
 components/sections-config.jsx Usuarios, Idiomas, Localización, Branding, Módulos, Demos

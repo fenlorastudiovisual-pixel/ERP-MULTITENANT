@@ -406,3 +406,38 @@ td.right,th.right{text-align:right}
 .tenant-head h1{font-size:22px;margin:3px 0 2px}
 .tenant-head p{color:var(--muted);font-size:12px;margin:0}
 @media(max-width:760px){.tenant-shell{padding:18px 14px 40px}}
+
+/* Demo pública interactiva */
+.demo-layout{display:grid;grid-template-columns:220px 1fr;gap:18px;align-items:start}
+.demo-nav{background:#fff;border:1px solid var(--line);border-radius:14px;padding:10px;position:sticky;top:18px;display:flex;flex-direction:column;gap:4px}
+.demo-nav-title{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800;padding:8px 10px 6px}
+.demo-nav button{display:flex;align-items:center;gap:9px;text-align:left;border:0;background:transparent;border-radius:9px;padding:9px 10px;font-size:12px;color:var(--ink);cursor:pointer}
+.demo-nav button:hover{background:#f5f6fb}
+.demo-nav button.active{background:#eef0ff;color:#3730a3;font-weight:700}
+.demo-nav button span{color:var(--indigo);font-weight:800}
+.demo-nav-foot{margin-top:10px;border-top:1px solid var(--line);padding:10px;font-size:10px;color:var(--muted);line-height:1.6}
+.demo-content{display:flex;flex-direction:column;gap:18px;min-width:0}
+.demo-form{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+.demo-form b{font-size:12px;margin-right:6px}
+.demo-form input,.demo-form select{border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12px;outline:none;background:#fff}
+.demo-form input:focus,.demo-form select:focus{border-color:var(--indigo);box-shadow:0 0 0 3px rgba(99,102,241,.12)}
+.btn-mini{padding:5px 8px;font-size:10px;border-radius:7px}
+.searchbox-input{border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:11px;outline:none;width:220px}
+@media(max-width:900px){.demo-layout{grid-template-columns:1fr}.demo-nav{position:static;flex-direction:row;overflow:auto}.demo-nav-title,.demo-nav-foot{display:none}}
+
+/* Centro de demos del Super Admin */
+.demo-create{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+.demo-create .field{min-width:180px}
+.demo-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.demo-card{border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px;background:#fff}
+.demo-card-head{display:flex;align-items:center;gap:10px}
+.demo-card-head b{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.demo-card-head small{display:block;color:var(--muted);font-size:10px;margin-top:2px}
+.demo-card-head .tag{margin-left:auto;white-space:nowrap}
+.demo-card-stats{display:flex;gap:8px;flex-wrap:wrap}
+.demo-card-stats span{background:#f5f6fb;border-radius:6px;padding:4px 7px;font-size:10px;color:var(--muted)}
+.demo-card-meta{font-size:10px;color:var(--muted);line-height:1.6}
+.demo-card-actions,.demo-card-share{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.demo-card-share input{flex:1;min-width:140px;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:11px;outline:none}
+.demo-card > .btn{align-self:flex-start}
+@media(max-width:700px){.demo-create .field{min-width:100%}}

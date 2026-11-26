@@ -243,6 +243,23 @@ create table if not exists public.demo_leads (
   captured_at timestamptz not null default now()
 );
 
+-- Demos funcionales compartibles: datos operativos reales por nicho.
+create table if not exists public.demo_links (
+  id uuid primary key default gen_random_uuid(),
+  token text not null unique,
+  niche_id text not null,
+  business_name text not null,
+  created_by text,
+  expires_at timestamptz not null,
+  visits integer not null default 0,
+  status text not null default 'Activa',
+  payload jsonb not null,
+  lead jsonb,
+  converted_tenant text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 -- ── Auditoría ────────────────────────────────────────────────────────────────
 -- Tabla de solo inserción: no se actualiza ni se borra desde la aplicación.
 create table if not exists public.audit_log (
@@ -453,6 +470,9 @@ create policy superadmin_all on public.demo_tenants for all to public
 drop policy if exists superadmin_all on public.demo_leads;
 create policy superadmin_all on public.demo_leads for all to public
   using (public.is_superadmin()) with check (public.is_superadmin());
+drop policy if exists superadmin_all on public.demo_links;
+create policy superadmin_all on public.demo_links for all to public
+  using (public.is_superadmin()) with check (public.is_superadmin());
 drop policy if exists superadmin_all on public.profiles;
 create policy superadmin_all on public.profiles for all to public
   using (public.is_superadmin()) with check (public.is_superadmin());
@@ -507,6 +527,7 @@ alter table public.plan_flags enable row level security;
 alter table public.demo_scenarios enable row level security;
 alter table public.demo_tenants enable row level security;
 alter table public.demo_leads enable row level security;
+alter table public.demo_links enable row level security;
 alter table public.profiles enable row level security;
 alter table public.platform_config enable row level security;
 alter table public.languages enable row level security;
@@ -522,6 +543,7 @@ alter table public.plan_flags force row level security;
 alter table public.demo_scenarios force row level security;
 alter table public.demo_tenants force row level security;
 alter table public.demo_leads force row level security;
+alter table public.demo_links force row level security;
 alter table public.profiles force row level security;
 alter table public.tenant_mfa force row level security;
 alter table public.platform_config force row level security;

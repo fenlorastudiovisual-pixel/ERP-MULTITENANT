@@ -430,7 +430,8 @@ export function Demos({ ctx }) {
 
   return <>
     <SectionHead eyebrow="Configuración" title="Fábrica de demos" description="Genera demos ultra completas por nicho en segundos: datos semilla, flujo guiado, enlace con caducidad y captura de lead. Las 14 demos del catálogo están listas."
-      actions={<Btn tone="primary" icon="▶" onClick={() => openWizard(DEMOS[0].id)}>Nueva demo</Btn>} />
+      actions={<a className="btn btn-primary" href="/demos">Abrir centro de demos reales</a>} />
+    <div className="callout">Las demos de abajo son el catálogo visual. Para crear una demo navegable con datos reales, abrirla, enviarla por WhatsApp y convertirla en cliente, usa el <a href="/demos"><b>centro de demos reales</b></a>.</div>
     <div className="stat-grid">
       <Stat label="Demos generadas" value={demos.length} icon="▶" />
       <Stat label="Visitas totales" value={demos.reduce((s, d) => s + d.visits, 0)} icon="◎" tone="green" />

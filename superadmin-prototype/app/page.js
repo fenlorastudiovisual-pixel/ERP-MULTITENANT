@@ -9,7 +9,7 @@ import { Security, Operations, Support, Integrations, Data, BI, Settings } from 
 const STORAGE_KEY = "erp-multitenant-superadmin-v1";
 const STATE_VERSION = 2;
 const PRODUCT_NAME = "ERP Multitenant";
-const DEMO_BASE_URL = "https://demo.tuempresa.com/";
+const DEMO_BASE_URL = "https://erp.fenloravisual.com/demo/";
 
 const COMPONENTS = {
   dashboard: Dashboard, tenants: Tenants, plans: Plans, billing: Billing,

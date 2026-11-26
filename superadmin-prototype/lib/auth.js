@@ -157,12 +157,22 @@ export async function getSessionUser(request) {
 
   // Modo de respaldo sin Access: sesión firmada en cookie.
   const claims = await readSession(readCookies(request)[SESSION_COOKIE]);
-  if (!claims) return null;
-  try {
-    return await adminById(claims.sub);
-  } catch {
-    return null;
+  if (claims) {
+    try {
+      return await adminById(claims.sub);
+    } catch {
+      return null;
+    }
   }
+
+  // Solo desarrollo local: permite probar las APIs sin tener que hacer login.
+  if (process.env.NODE_ENV !== "production") {
+    const devEmail = (request.headers.get("x-dev-email") || "").toLowerCase();
+    if (devEmail) {
+      try { return await adminByEmail(devEmail); } catch { return null; }
+    }
+  }
+  return null;
 }
 
 export async function findAdminByEmail(email) {
