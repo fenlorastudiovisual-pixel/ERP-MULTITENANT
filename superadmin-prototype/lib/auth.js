@@ -1,13 +1,13 @@
 // Autenticación del Super Admin: hashes PBKDF2 y sesiones firmadas con HMAC.
 // Solo para servidor (rutas /api/*). Usa WebCrypto para funcionar igual en Node y Workers.
 
-import { runAsSuperAdmin, dbEnabled } from "./db";
+import { runAsSuperAdmin, dbEnabled } from "./db.js";
 
 const encoder = new TextEncoder();
 export const SESSION_COOKIE = "erp_session";
 export const SESSION_MAX_AGE = 8 * 60 * 60; // 8 horas
 const SESSION_VERSION = 1;
-const PBKDF2_ITERATIONS = 180000;
+const PBKDF2_ITERATIONS = 10000;
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_MINUTES = 15;
 
@@ -33,7 +33,7 @@ function constantTimeEqual(a, b) {
 
 export async function hashPassword(password) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const key = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]);
+  const key = await crypto.subtle.importKey("raw", encoder.encode(password), { name: "PBKDF2" }, false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits(
     { name: "PBKDF2", salt, iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
     key,
@@ -46,7 +46,7 @@ export async function verifyPassword(password, stored) {
   try {
     const [scheme, iterations, salt, expected] = String(stored).split("$");
     if (scheme !== "pbkdf2" || !iterations || !salt || !expected) return false;
-    const key = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]);
+    const key = await crypto.subtle.importKey("raw", encoder.encode(password), { name: "PBKDF2" }, false, ["deriveBits"]);
     const bits = await crypto.subtle.deriveBits(
       { name: "PBKDF2", salt: fromBase64Url(salt), iterations: Number(iterations), hash: "SHA-256" },
       key,
@@ -118,7 +118,7 @@ export async function getSessionUser(request) {
          left join public.profiles p on p.id = u.id
          where u.id = ${claims.sub}::uuid`,
     ]);
-    const user = results[0]?.[0];
+    const user = results[0];
     if (!user?.active || user.global_role !== "super_admin") return null;
     return { id: user.id, email: user.email, role: "super_admin" };
   } catch {
@@ -133,7 +133,7 @@ export async function findAdminByEmail(email) {
        left join public.profiles p on p.id = u.id
        where lower(u.email) = ${String(email).toLowerCase()}`,
   ]);
-  return results[0]?.[0] || null;
+  return results[0] || null;
 }
 
 export async function registerFailedAttempt(userId, attempts, locked) {

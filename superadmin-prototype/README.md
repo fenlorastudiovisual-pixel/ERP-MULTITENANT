@@ -12,11 +12,28 @@ npm run dev
 
 Abrir **http://localhost:8790**. Para comprobar la compilación: `npm run build`.
 
+## Cómo entrar (producción)
+
+1. Abre **https://erp.fenloravisual.com**.
+2. Correo: **fenlorastudiovisual@gmail.com**.
+3. Contraseña: la que se te entregó al crear el usuario (si la perdiste, restablécela con el comando de abajo).
+
+La sesión dura 8 horas. Tras 5 intentos fallidos el acceso se bloquea 15 minutos.
+
+Para crear o cambiar la contraseña del Super Admin (en tu terminal, sin subirla a Git):
+
+```powershell
+$env:ADMIN_EMAIL = "fenlorastudiovisual@gmail.com"
+$env:ADMIN_PASSWORD = "tu-clave-nueva-de-al-menos-12-caracteres"
+npm run db:admin
+Remove-Item Env:ADMIN_EMAIL, Env:ADMIN_PASSWORD
+```
+
 ## Conectar Neon (Postgres gratuito)
 
 1. Crea un proyecto en **https://neon.tech** (plan Free, sin tarjeta).
 2. Copia la *connection string* (usa la del **pooler**) del Dashboard → tu proyecto → *Connection string*.
-3. Copia `.env.example` a `.env.local` y pega la URL en `DATABASE_URL`. Cambia las dos claves del Super Admin.
+3. Copia `.env.example` a `.env.local` y pega la URL en `DATABASE_URL`. Cambia la frase secreta `SUPERADMIN_KEY`.
 4. Aplica el esquema:
 
    ```bash
@@ -34,7 +51,7 @@ Sin `DATABASE_URL` la app sigue funcionando igual con `localStorage`. Con Neon, 
 
 `npm run db:check` imprime ambos contextos para verificarlo.
 
-> **Seguridad:** `SUPERADMIN_KEY` / `NEXT_PUBLIC_SUPERADMIN_KEY` son una medida provisional para el prototipo. Antes de producción, sustitúyelas por autenticación real (sesión firmada) y comprueba el rol dentro de cada endpoint.
+> **Seguridad:** el acceso usa login real con correo/contraseña. La contraseña se guarda como hash PBKDF2 y la sesión es una cookie firmada con HMAC (`HttpOnly`, `Secure`, `SameSite=Lax`). `SUPERADMIN_KEY` es secreto del servidor y nunca viaja al navegador; `/api/state` verifica la sesión y el rol `super_admin` en cada petición.
 
 ## Desplegar en Cloudflare Workers (OpenNext)
 
@@ -55,7 +72,7 @@ npx wrangler secret put DATABASE_URL
 npx wrangler secret put SUPERADMIN_KEY
 ```
 
-Pega la misma connection string de Neon y la misma frase secreta que usas en `.env.local`. `NEXT_PUBLIC_SUPERADMIN_KEY` no va como secret: se incrusta en el bundle del navegador durante el build (por eso es público por diseño).
+Pega la misma connection string de Neon y la misma frase secreta que usas en `.env.local`. No existe `NEXT_PUBLIC_SUPERADMIN_KEY`: esa clave pública ya no se usa.
 
 ### 3. Compilar y desplegar
 
@@ -63,7 +80,7 @@ Pega la misma connection string de Neon y la misma frase secreta que usas en `.e
 npm run deploy
 ```
 
-El script `database/build-worker.mjs` oculta `.env.local` durante el build para que **`DATABASE_URL` y `SUPERADMIN_KEY` no queden horneados en el bundle**; solo deja `NEXT_PUBLIC_SUPERADMIN_KEY`. En runtime, los secrets de Cloudflare sobrescriben `process.env`.
+El script `database/build-worker.mjs` oculta todos los archivos `.env*` durante el build para que **`DATABASE_URL` y `SUPERADMIN_KEY` no queden horneados en el bundle**. En runtime, los secrets de Cloudflare se leen desde `process.env`.
 
 ### 4. Verificar
 
