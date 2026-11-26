@@ -88,7 +88,7 @@ export function Tenants({ ctx }) {
   const [plan, setPlan] = useState("todos");
   const [status, setStatus] = useState("todos");
   const [nuevo, setNuevo] = useState(false);
-  const [form, setForm] = useState({ name: "", niche: "Retail", plan: "inicio", country: "Colombia" });
+  const [form, setForm] = useState({ name: "", email: "", niche: "Retail", plan: "inicio", country: "Colombia" });
 
   const rows = tenants.filter((t) => {
     const okQ = (t.name + t.niche + t.city).toLowerCase().includes(q.toLowerCase());
@@ -98,24 +98,22 @@ export function Tenants({ ctx }) {
   });
   const create = () => {
     if (!form.name.trim()) return toast("Escribe el nombre del negocio");
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.trim())) return toast("Escribe el correo del administrador del negocio");
     const t = {
-      id: "t" + (tenants.length + 1), name: form.name, niche: form.niche, plan: form.plan,
-      country: form.country, city: "—", users: 1, status: "Prueba", mode: "Pool",
-      mrr: 0, health: 60, color: "#6366f1", created: new Date().toISOString().slice(0, 10),
+      id: "t" + (tenants.length + 1), name: form.name, email: form.email.trim().toLowerCase(),
+      niche: form.niche, plan: form.plan, country: form.country, city: "—", users: 1,
+      status: "Prueba", mode: "Pool", mrr: 0, health: 60, color: "#6366f1",
+      created: new Date().toISOString().slice(0, 10),
     };
-    setTenants([t, ...tenants]); setNuevo(false); setForm({ name: "", niche: "Retail", plan: "inicio", country: "Colombia" });
-    toast("Tenant creado en modo prueba");
+    setTenants([t, ...tenants]); setNuevo(false);
+    setForm({ name: "", email: "", niche: "Retail", plan: "inicio", country: "Colombia" });
+    toast("Negocio creado con acceso para " + t.email);
   };
 
   return (
     <>
       <SectionHead eyebrow="Centro de control" title="Tenants" description="Todos los negocios de la plataforma: plan, estado, consumo y acceso."
         actions={<Btn tone="primary" icon="＋" onClick={() => setNuevo(true)}>Nuevo negocio</Btn>} />
-      {ctx.impersonating && (
-        <div className="impersonate">⚠ Estás dentro de <b>{ctx.impersonating}</b> con una sesión temporal auditada.
-          <button className="btn btn-xs" onClick={() => setImpersonating(null)}>Salir del negocio</button>
-        </div>
-      )}
       <div className="stat-grid" style={{ gridTemplateColumns: "repeat(4,1fr)" }}>
         <Stat label="Total de negocios" value={tenants.length} icon="▦" />
         <Stat label="Activos" value={tenants.filter(t => t.status === "Activo").length} icon="✓" tone="green" />
@@ -173,7 +171,20 @@ export function Tenants({ ctx }) {
                 <div><small>MRR</small><b>{money(t.mrr)}</b></div>
                 <div><small>Salud del cliente</small><b>{t.health}%</b></div>
                 <div><small>Alta</small><b>{t.created}</b></div>
+                <div><small>Correo de acceso</small><b>{t.email || "—"}</b></div>
               </div>
+              <Field label="Cambiar correo de acceso del negocio">
+                <input
+                  type="email"
+                  value={t.email || ""}
+                  placeholder="administrador@empresa.com"
+                  onChange={(e) => {
+                    const email = e.target.value.toLowerCase();
+                    setTenants(tenants.map((x) => x.id === t.id ? { ...x, email } : x));
+                    setSelectedTenant({ ...t, email });
+                  }}
+                />
+              </Field>
               <Panel title="Consumo del periodo"><div className="limit-grid">
                 <div className="limit-box"><label>Facturas del mes</label><input value="3.240" readOnly /></div>
                 <div className="limit-box"><label>API calls</label><input value="482.100" readOnly /></div>
@@ -200,6 +211,9 @@ export function Tenants({ ctx }) {
       <Modal open={nuevo} onClose={() => setNuevo(false)} title="Nuevo negocio" subtitle="Alta asistida en 4 pasos (demo simplificada)">
         <div className="wizard-steps"><i className="wizard-step on" /><i className="wizard-step" /><i className="wizard-step" /><i className="wizard-step" /></div>
         <Field label="Nombre del negocio"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Ej. Distribuidora Sol" /></Field>
+        <Field label="Correo del administrador del negocio">
+          <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="administrador@empresa.com" />
+        </Field>
         <div className="two-col">
           <Field label="Nicho"><select value={form.niche} onChange={(e) => setForm({ ...form, niche: e.target.value })}>
             {["Retail", "Restaurante", "Distribuidora", "Manufactura", "Clínica", "Servicios", "Otro"].map((x) => <option key={x}>{x}</option>)}
@@ -209,7 +223,7 @@ export function Tenants({ ctx }) {
           </select></Field>
         </div>
         <Field label="País"><input value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} /></Field>
-        <div className="callout">Al crear el negocio se activarán los módulos del plan, el idioma y la moneda por defecto, y se generará el acceso para el administrador.</div>
+        <div className="callout">Al crear el negocio se activarán los módulos del plan y se dará acceso a su panel con <b>este correo</b>. Ese correo debe estar permitido en la política de Access del panel.</div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <Btn onClick={() => setNuevo(false)}>Cancelar</Btn><Btn tone="primary" onClick={create}>Crear negocio</Btn>
         </div>

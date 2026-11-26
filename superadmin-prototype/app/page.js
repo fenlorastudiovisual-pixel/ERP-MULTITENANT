@@ -68,6 +68,12 @@ const normalizeState = (saved) => {
       : [...tenants, sampleClient];
     state.__stateVersion = STATE_VERSION;
   }
+  // Los negocios creados antes de añadir el correo heredan el de la semilla.
+  const tenants = Array.isArray(state.tenants) ? state.tenants : base.tenants;
+  state.tenants = tenants.map((tenant) => ({
+    ...tenant,
+    email: tenant.email || base.tenants.find((item) => item.id === tenant.id)?.email || "",
+  }));
   return state;
 };
 

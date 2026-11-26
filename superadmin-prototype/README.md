@@ -133,11 +133,19 @@ El negocio **no entra desde la consola del Super Admin**. Tiene su propia puerta
 - Cada entrada se registra en `public.audit_log`.
 - La consola del Super Admin ya no tiene el botón «Entrar al negocio».
 
-Para dar acceso a un correo (idempotente):
+#### Alta de un negocio (flujo correcto)
+
+En **Tenants → Nuevo negocio** se escribe el **nombre** y el **correo del administrador del negocio**. Al guardar:
+
+- El correo se guarda en el negocio (`settings.email` y `app_state`).
+- Se crea o reutiliza su identidad y se le vincula como **owner** del tenant en `public.tenant_members` de forma automática. El mismo correo puede administrar varios negocios; no se duplica su perfil.
+- Si el correo del negocio cambia, el acceso anterior se desactiva automáticamente.
+- El único paso manual restante es permitir ese correo en la política de Access del panel (ver abajo).
+
+Los negocios creados antes de que existiera el campo se completan una sola vez con:
 
 ```bash
-npm run db:tenant-access
-# o: TENANT_ACCESS_EMAIL=usuario@empresa.com TENANT_KEY=t16 npm run db:tenant-access
+npm run db:backfill-email
 ```
 
 #### Configurar Access para `/negocio` (una sola vez)

@@ -230,7 +230,7 @@ export function buildSyncQueries(tx, state = {}) {
     region: "america",
     health_score: number(tenant.health),
     brand: json({ color: tenant.color }),
-    settings: json({ users: tenant.users, mrr: tenant.mrr, created: tenant.created }),
+    settings: json({ users: tenant.users, mrr: tenant.mrr, created: tenant.created, email: text(tenant.email) }),
     mrr: number(tenant.mrr),
     users_count: number(tenant.users),
     created_at: timestamp(tenant.created),
@@ -474,6 +474,74 @@ export function buildSyncQueries(tx, state = {}) {
       global_role = excluded.global_role, mfa_enabled = excluded.mfa_enabled,
       scope = excluded.scope, state = excluded.state
   `);
+
+  // ── Propietarios de negocio: vinculación automática del correo ────────────
+  // Cada negocio se crea con el correo de su administrador. Ese correo pasa a
+  // ser owner del tenant automáticamente: no hace falta ningún sembrado manual.
+  // Si el correo ya existe (p. ej. el Super Admin), se reutiliza su identidad y
+  // su perfil en lugar de duplicarlos.
+  const emailPattern = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+  const ownerRows = tenants
+    .map((tenant) => ({
+      tenant_id: uuidFor(`tenant:${tenant.id}`),
+      email: String(tenant.email || "").trim().toLowerCase(),
+      full_name: text(tenant.name) || "Administrador del negocio",
+    }))
+    .filter((row) => emailPattern.test(row.email));
+
+  if (ownerRows.length) {
+    // Un mismo correo puede administrar varios negocios: una sola identidad.
+    const ownerByEmail = new Map();
+    for (const row of ownerRows) if (!ownerByEmail.has(row.email)) ownerByEmail.set(row.email, row);
+    const ownerProfileRows = [...ownerByEmail.values()];
+
+    queries.push(tx`
+      insert into auth.users (id, email, created_at)
+      select x.id::uuid, x.email, now()
+      from jsonb_to_recordset(${json(ownerProfileRows.map((row) => ({
+        id: uuidFor(`user:${row.email}`),
+        email: row.email,
+      })))}::jsonb) as x(id text, email text)
+      on conflict (email) do nothing
+    `);
+
+    // `on conflict (id)` conserva intacto el perfil del Super Admin cuando el
+    // correo del negocio coincide con el suyo.
+    queries.push(tx`
+      insert into public.profiles
+        (id, source_key, full_name, email, global_role, mfa_enabled, created_at)
+      select u.id, 'owner:' || x.email, x.full_name, x.email, null, false, now()
+      from jsonb_to_recordset(${json(ownerProfileRows)}::jsonb) as x(
+        tenant_id text, email text, full_name text
+      )
+      join auth.users u on lower(u.email) = lower(x.email)
+      on conflict (id) do nothing
+    `);
+
+    queries.push(tx`
+      insert into public.tenant_members (tenant_id, user_id, role, active)
+      select x.tenant_id::uuid, u.id, 'owner', true
+      from jsonb_to_recordset(${json(ownerRows)}::jsonb) as x(
+        tenant_id text, email text, full_name text
+      )
+      join auth.users u on lower(u.email) = lower(x.email)
+      on conflict (tenant_id, user_id) do update set role = 'owner', active = true
+    `);
+
+    // Si se cambia o se quita el correo de acceso de un negocio, el propietario
+    // anterior deja de tener acceso al panel.
+    queries.push(tx`
+      update public.tenant_members tm
+      set active = false
+      where tm.role = 'owner'
+        and not exists (
+          select 1
+          from jsonb_to_recordset(${json(ownerRows)}::jsonb) as x(tenant_id text, email text)
+          join auth.users u on lower(u.email) = lower(x.email)
+          where x.tenant_id = tm.tenant_id::text and u.id = tm.user_id
+        )
+    `);
+  }
 
   return queries;
 }

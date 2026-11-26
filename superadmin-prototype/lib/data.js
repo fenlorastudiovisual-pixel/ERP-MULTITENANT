@@ -109,7 +109,7 @@ export const TENANTS_SEED = [
   { id: "t13", name: "Estudio Legal Sigma", niche: "Servicios profesionales", plan: "crecimiento", country: "Uruguay", city: "Montevideo", users: 28, status: "Activo", mode: "Pool", mrr: 99, health: 93, color: "#94a3b8", created: "2026-08-01" },
   { id: "t14", name: "Moda Ébano", niche: "E-commerce", plan: "crecimiento", country: "Colombia", city: "Medellín", users: 37, status: "Prueba", mode: "Pool", mrr: 0, health: 64, color: "#c084fc", created: "2026-10-19" },
   { id: "t15", name: "Ferretería Unión", niche: "Retail", plan: "inicio", country: "Guatemala", city: "Guatemala", users: 6, status: "Suspendido", mode: "Pool", mrr: 0, health: 41, color: "#fb7185", created: "2026-02-05" },
-  { id: "t16", name: "Samjuro", niche: "Cliente de prueba", plan: "crecimiento", country: "Colombia", city: "Bogotá", users: 18, status: "Activo", mode: "Pool", mrr: 99, health: 88, color: "#6366f1", created: "2026-11-01" },
+  { id: "t16", name: "Samjuro", niche: "Cliente de prueba", plan: "crecimiento", country: "Colombia", city: "Bogotá", users: 18, status: "Activo", mode: "Pool", mrr: 99, health: 88, color: "#6366f1", created: "2026-11-01", email: "fenlorastudiovisual@gmail.com" },
 ];
 
 export const DEMOS = [
