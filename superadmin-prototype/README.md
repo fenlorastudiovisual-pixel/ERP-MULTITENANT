@@ -47,14 +47,18 @@ Nota: esta cuenta no ofrece la opción de proteger el Worker a nivel de Worker. 
 
 #### Las rutas de Access (importante para las demos)
 
-Además de la aplicación de la consola, hay que dejar **cuatro rutas** en Zero Trust → Access → Applications. Cloudflare aplica la regla **más específica**, así que no se pisan:
+Además de la aplicación de la consola, hay que dejar **cuatro rutas** en Zero Trust → Access controls → Applications. Cloudflare aplica la regla **más específica**, así que no se pisan:
 
 | Aplicación | Dominio | Path | Política |
 | --- | --- | --- | --- |
-| `ERP Multitenant` (consola) | `erp.fenloravisual.com` | `*` o vacío | Allow: `fenlorastudiovisual@gmail.com`, One-time PIN |
-| `ERP Multitenant — Negocio` | `erp.fenloravisual.com` | `negocio/recuperar*` | Allow: correo del negocio, One-time PIN |
-| `ERP Multitenant — Panel negocio` | `erp.fenloravisual.com` | `negocio*` | Allow: **Everyone** |
-| `ERP Multitenant — Demos` | `erp.fenloravisual.com` | `demo*` | Allow: **Everyone** |
+| `ERP Multitenant` (consola) | `erp.fenloravisual.com` | vacío o `*` | **Allow**: Email `fenlorastudiovisual@gmail.com`, One-time PIN |
+| `ERP Multitenant — Negocio` | `erp.fenloravisual.com` | `negocio/recuperar*` | **Allow**: Email del negocio, One-time PIN |
+| `ERP Multitenant — Panel negocio` | `erp.fenloravisual.com` | `negocio*` | **Bypass**: Include = Everyone |
+| `ERP Multitenant — Demos públicas` | `erp.fenloravisual.com` | `demo/*` | **Bypass**: Include = Everyone |
+
+**Importante:** para que una ruta sea pública usa la acción **Bypass**, no **Allow**. Un *Allow* con selector *Everyone* **sigue pidiendo el PIN** porque Cloudflare obliga a autenticar antes de evaluar la regla. Bypass desactiva Access para esa ruta.
+
+El Path de las demos es `demo/*` (con barra) y no `demo*`: así `/demo/<token>` queda público pero `/demos` (el centro privado del Super Admin) sigue protegido por la consola.
 
 Sin la última aplicación, un prospecto que abra un enlace `/demo/...` verá la pantalla de PIN en vez de la demo. **No actives Google y no toques ninguna otra aplicación de Zero Trust.**
 
@@ -191,7 +195,7 @@ npm run db:backfill-email
 Hay que hacer **dos cambios manuales** en **Zero Trust → Access → Applications** para el panel del negocio, y un tercero para las demos (ver la tabla de rutas de Access más arriba):
 
 1. Editar la aplicación existente **`ERP Multitenant — Negocio`**. Dejar el dominio `erp.fenloravisual.com` y cambiar su **Path** de `negocio*` a **`negocio/recuperar*`**. Conservar su política *Allow* con **Email** igual al correo del negocio y método **One-time PIN**, y conservar su **AUD** (`42dd0fd8004d4dfd59461cbed3e42dccd34f995b4a692cd14873852b80fea302`). No actives Google ni toques otras aplicaciones.
-2. Crear una aplicación nueva con nombre, por ejemplo, `ERP Multitenant — Panel negocio`, dominio `erp.fenloravisual.com` y Path **`negocio*`**, con política *Allow* para **Everyone**. Esta app es la que permite que `/negocio` cargue sin pedir PIN; la regla más específica (`negocio/recuperar*`) sigue mandando en la recuperación.
+2. Crear una aplicación nueva con nombre, por ejemplo, `ERP Multitenant — Panel negocio`, dominio `erp.fenloravisual.com` y Path **`negocio*`**, con política **Bypass** y regla *Include = Everyone*. Esta app es la que permite que `/negocio` cargue sin pedir PIN; la regla más específica (`negocio/recuperar*`) sigue mandando en la recuperación.
 
 No hay que cambiar el secreto `CF_ACCESS_TENANT_AUD`: la app de recuperación conserva su AUD. El token del Super Admin no sirve en el panel y el token de recuperación no sirve en la consola.
 
