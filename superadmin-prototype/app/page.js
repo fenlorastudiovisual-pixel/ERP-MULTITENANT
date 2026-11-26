@@ -79,7 +79,6 @@ export default function Page() {
   const [section, setSection] = useState("dashboard");
   const [selectedTenant, setSelectedTenant] = useState(null);
   const [detailTab, setDetailTab] = useState("res");
-  const [impersonating, setImpersonating] = useState(null);
   const [query, setQuery] = useState("");
   const [notice, setNotice] = useState("");
   const [sessionUser, setSessionUser] = useState(null);
@@ -174,7 +173,6 @@ export default function Page() {
   const resetData = () => {
     setData(initialData());
     setSelectedTenant(null);
-    setImpersonating(null);
     setSection("dashboard");
     try { window.localStorage.removeItem(STORAGE_KEY); } catch (e) { /* noop */ }
     if (dbMode) {
@@ -245,11 +243,10 @@ export default function Page() {
     branding: data.branding, setBranding: setValue("branding"),
     settings: data.settings, setSettings: setValue("settings"),
     selectedTenant, setSelectedTenant,
-    impersonating, setImpersonating,
     detailTab, setDetailTab,
     toast, resetData,
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [data, section, selectedTenant, impersonating, detailTab]);
+  }), [data, section, selectedTenant, detailTab]);
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -357,9 +354,6 @@ export default function Page() {
         </header>
         <div className="content">
           {dbError && <div className="impersonate" style={{ borderColor: "#f59e0b" }}>⚠ {dbError}</div>}
-          {impersonating && <div className="impersonate">⚠ Sesión temporal dentro de <b>{impersonating}</b>. Todas las acciones quedan registradas.
-            <button className="btn btn-xs" onClick={() => { setImpersonating(null); toast("Sesión de impersonación cerrada"); }}>Salir</button>
-          </div>}
           <Active ctx={ctx} />
         </div>
       </main>

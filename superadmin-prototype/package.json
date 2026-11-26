@@ -12,6 +12,7 @@
     "db:migrate-state": "node database/migrate-state.mjs",
     "db:role": "node database/setup-app-role.mjs",
     "db:rls-check": "node database/check-rls.mjs",
+    "db:tenant-access": "node database/seed-tenant-access.mjs",
     "db:admin": "node database/create-admin.mjs",
     "build:worker": "node database/build-worker.mjs",
     "preview:worker": "opennextjs-cloudflare preview",

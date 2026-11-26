@@ -4,4 +4,5 @@ DATABASE_URL=postgresql://neondb_owner:TU_PASSWORD@ep-xxxx-pooler.region.aws.neo
 DATABASE_APP_URL=postgresql://erp_app:TU_PASSWORD@ep-xxxx-pooler.region.aws.neon.tech/neondb?sslmode=require
 CF_ACCESS_TEAM_DOMAIN=https://tu-equipo.cloudflareaccess.com
 CF_ACCESS_AUD=aud-tag-de-la-aplicacion
+CF_ACCESS_TENANT_AUD=aud-tag-de-la-aplicacion-del-negocio
 SUPERADMIN_KEY=cambia-esta-frase-secreta-larga

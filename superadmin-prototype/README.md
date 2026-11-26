@@ -109,6 +109,7 @@ npx wrangler secret put DATABASE_APP_URL
 npx wrangler secret put SUPERADMIN_KEY
 npx wrangler secret put CF_ACCESS_TEAM_DOMAIN
 npx wrangler secret put CF_ACCESS_AUD
+npx wrangler secret put CF_ACCESS_TENANT_AUD
 ```
 
 Pega la connection string administrativa de Neon, la URL del rol `erp_app` generada por `npm run db:role`, la frase secreta de `.env.local`, el team domain y el AUD tag de tu aplicación Access. No existe `NEXT_PUBLIC_SUPERADMIN_KEY`: esa clave pública ya no se usa.
@@ -121,17 +122,37 @@ npm run deploy
 
 El script `database/build-worker.mjs` oculta todos los archivos `.env*` durante el build para que **`DATABASE_URL` y `SUPERADMIN_KEY` no queden horneados en el bundle**. En runtime, los secrets de Cloudflare se leen desde `process.env`.
 
-### Vista del cliente (vista del tenant)
+### Panel independiente del negocio (`/negocio`)
 
-Desde **Tenants** → abre un negocio → **Entrar al negocio**. Se abre `/tenant/t16` (o el id correspondiente):
+El negocio **no entra desde la consola del Super Admin**. Tiene su propia puerta en **https://erp.fenloravisual.com/negocio**, protegida por una aplicación de Access distinta.
 
-- La pantalla muestra los datos reales de ese negocio leyendo las tablas de Neon **con su propio contexto RLS** (`app.tenant_id`), no como super admin.
-- Incluye plan contratado, límites, módulos activos, equipo, salud del negocio y facturas.
-- Cada apertura se registra en `public.audit_log` con el correo del Super Admin que la hizo.
-- Si el negocio es recién creado, el botón espera un momento a que el guardado en Neon termine antes de abrir la vista.
-- Si no hay sesión válida de Access, la API devuelve 401 y no se muestra ningún dato.
+- El usuario entra con su **One-time PIN** al correo que tenga vinculado a un negocio.
+- El negocio se deduce del correo verificado y de `public.tenant_members`; **no se puede elegir con la URL**.
+- Los datos se leen con el contexto RLS de ese tenant. El Super Admin no puede abrir este panel.
+- Muestra plan, límites, módulos, equipo, salud y facturas del negocio.
+- Cada entrada se registra en `public.audit_log`.
+- La consola del Super Admin ya no tiene el botón «Entrar al negocio».
 
-Para comprobar la API directamente: `GET /api/tenant/t16` con la sesión iniciada.
+Para dar acceso a un correo (idempotente):
+
+```bash
+npm run db:tenant-access
+# o: TENANT_ACCESS_EMAIL=usuario@empresa.com TENANT_KEY=t16 npm run db:tenant-access
+```
+
+#### Configurar Access para `/negocio` (una sola vez)
+
+En **Zero Trust → Access → Applications → Add an application → Self-hosted**:
+
+1. Application name: `ERP Multitenant — Negocio`.
+2. Domain: `erp.fenloravisual.com` y Path: `negocio*`.
+3. Policy *Allow* con **Email** igual al correo del negocio y método **One-time PIN**. No actives Google.
+4. Guarda y copia el **Application Audience (AUD) Tag** de esta nueva aplicación.
+5. Añade el secreto (lo hace el administrador técnico): `npx wrangler secret put CF_ACCESS_TENANT_AUD`.
+
+La regla de `/negocio` es más específica que la del dominio completo, así que Cloudflare aplica la nueva política solo a esa ruta. El token del Super Admin no sirve aquí y el token del negocio no sirve en la consola.
+
+Para comprobar la API directamente con la sesión del negocio: `GET /negocio/api/me`.
 
 ### 4. Verificar
 

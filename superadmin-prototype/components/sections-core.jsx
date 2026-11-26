@@ -83,7 +83,7 @@ export function Dashboard({ ctx }) {
 }
 
 export function Tenants({ ctx }) {
-  const { tenants, setTenants, plans, setSelectedTenant, setImpersonating, setSection, toast } = ctx;
+  const { tenants, setTenants, plans, setSelectedTenant, setSection, toast } = ctx;
   const [q, setQ] = useState("");
   const [plan, setPlan] = useState("todos");
   const [status, setStatus] = useState("todos");
@@ -158,12 +158,6 @@ export function Tenants({ ctx }) {
               <div style={{ marginLeft: "auto" }}><Tag tone={t.status === "Activo" ? "green" : "amber"} dot>{t.status}</Tag></div>
             </div>
             <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 14 }}>
-              <Btn tone="primary" size="sm" icon="↗" onClick={() => {
-                setImpersonating(t.name); setSelectedTenant(null);
-                // El guardado en Neon tiene 700 ms de debounce; se espera para
-                // que un negocio recién creado ya exista en las tablas.
-                window.setTimeout(() => { window.location.href = `/tenant/${t.id}`; }, 900);
-              }}>Entrar al negocio</Btn>
               <Btn size="sm" icon="◐" onClick={() => { setSection("plans"); setSelectedTenant(null); }}>Cambiar plan</Btn>
               <Btn size="sm" icon="⧉" onClick={() => { const c = { ...t, id: "t" + (tenants.length + 1), name: t.name + " (copia)", status: "Prueba", mrr: 0 }; setTenants([c, ...tenants]); toast("Negocio clonado"); setSelectedTenant(null); }}>Clonar</Btn>
               <Btn tone="danger" size="sm" onClick={() => { setTenants(tenants.map(x => x.id === t.id ? { ...x, status: x.status === "Suspendido" ? "Activo" : "Suspendido" } : x)); setSelectedTenant(null); toast("Estado actualizado"); }}>
