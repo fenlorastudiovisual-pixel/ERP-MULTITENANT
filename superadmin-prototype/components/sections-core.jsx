@@ -354,21 +354,20 @@ export function Plans({ ctx }) {
 
 export function Billing({ ctx }) {
   const { tenants, toast } = ctx;
-  const invoices = tenants.slice(0, 8).map((t, i) => ({
-    id: `F-${20260 + i}`, tenant: t.name, amount: t.mrr || 29, date: `2026-11-${String(28 - i * 2).padStart(2, "0")}`,
-    state: i === 2 || i === 5 ? "Fallido" : i === 4 ? "Pendiente" : "Pagado",
-  }));
+  // No hay tabla de facturación en Neon: no se inventan cobros.
+  const invoices = [];
   return <>
     <SectionHead eyebrow="Centro de control" title="Facturación y suscripciones" description="Cobro a los negocios: suscripciones, renovaciones, prorrateo, dunning y conciliación."
       actions={<Btn tone="primary" icon="↻" onClick={() => toast("Ciclo de facturación ejecutado")}>Ejecutar ciclo</Btn>} />
     <div className="stat-grid">
       <Stat label="MRR" value={money(tenants.reduce((s, t) => s + t.mrr, 0))} delta="+12.4%" icon="¤" />
       <Stat label="ARR proyectado" value={money(tenants.reduce((s, t) => s + t.mrr, 0) * 12)} delta="+18.2%" icon="↗" tone="green" />
-      <Stat label="Facturas vencidas" value="3" delta="2 críticas" icon="!" tone="rose" />
-      <Stat label="Churn mensual" value="2.1%" delta="-0.4%" icon="⇣" tone="amber" />
+      <Stat label="Facturas vencidas" value={0} icon="!" tone="rose" />
+      <Stat label="Churn mensual" value="—" icon="⇣" tone="amber" />
     </div>
     <div className="chart-grid">
       <Panel title="Facturas recientes" bodyClass="tight">
+        <div className="callout">No hay facturas registradas en Neon.</div>
         <Table columns={[
           { key: "id", label: "Factura", render: (r) => <span className="mono">{r.id}</span> },
           { key: "tenant", label: "Negocio" }, { key: "date", label: "Fecha" },
@@ -377,11 +376,7 @@ export function Billing({ ctx }) {
         ]} rows={invoices} />
       </Panel>
       <div>
-        <Panel title="Dunning / reintentos"><div className="mini-list">
-          <li><span>1</span> Ferretería Unión · reintento 2 de 3</li>
-          <li><span>2</span> TransAndes · tarjeta vencida</li>
-          <li><span>3</span> Moda Ébano · fondos insuficientes</li>
-        </div><div style={{ marginTop: 12 }}><Btn size="sm" onClick={() => toast("Se enviaron 3 recordatorios")}>Enviar recordatorios</Btn></div></Panel>
+        <Panel title="Dunning / reintentos"><div className="callout">No hay reintentos de cobro registrados en Neon.</div></Panel>
         <Panel title="Métodos de pago"><div className="mini-list">
           <li><span>✓</span> Tarjeta de crédito / débito</li><li><span>✓</span> Transferencia bancaria</li>
           <li><span>✓</span> PSE / pasarelas locales</li><li><span>✓</span> Factura electrónica</li>

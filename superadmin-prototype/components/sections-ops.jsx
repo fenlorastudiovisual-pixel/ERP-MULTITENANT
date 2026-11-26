@@ -14,27 +14,21 @@ export function Security({ ctx }) {
   const [tab, setTab] = useState("auditoria");
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState(null);
-  const logs = [
-    { id: 1, when: "hoy 09:42", who: "María Gómez", action: "Impersonación", target: "Belleza del Valle", detail: "Motivo: revisar incidente #4821 · duración 20 min", risk: "Alto" },
-    { id: 2, when: "hoy 08:15", who: "Sistema", action: "Exportación", target: "TransAndes", detail: "Exportó 12.480 registros de facturación", risk: "Medio" },
-    { id: 3, when: "ayer 17:38", who: "Andrés Ruiz", action: "Cambio de plan", target: "Constructora Hito", detail: "Crecimiento → Empresa · prorrateo aplicado", risk: "Bajo" },
-    { id: 4, when: "ayer 15:02", who: "Lucía Herrera", action: "Acceso", target: "Clínica Vida Plena", detail: "Soporte con autorización explícita · 45 min", risk: "Medio" },
-    { id: 5, when: "ayer 11:20", who: "Carlos Pineda", action: "Despliegue", target: "v2.14.0", detail: "Publicación a producción sin incidentes", risk: "Bajo" },
-    { id: 6, when: "20 nov 16:44", who: "María Gómez", action: "Cambio de permisos", target: "Rol Soporte", detail: "Se revocó permiso de exportación", risk: "Alto" },
-    { id: 7, when: "20 nov 10:11", who: "Sistema", action: "Alerta", target: "Ferretería Unión", detail: "3 intentos de acceso fallidos desde IP nueva", risk: "Alto" },
-  ];
+  // La auditoría real se consulta en Neon; aquí no se muestran eventos de ejemplo.
+  const logs = [];
   const rows = logs.filter((l) => (l.who + l.action + l.target).toLowerCase().includes(q.toLowerCase()));
   return <>
     <SectionHead eyebrow="Confianza" title="Seguridad y auditoría" description="Registro inmutable de accesos y cambios, impersonación controlada, cifrado, backups y cumplimiento."
       actions={<Btn icon="⇩" onClick={() => toast("Auditoría exportada a CSV")}>Exportar auditoría</Btn>} />
     <div className="stat-grid">
-      <Stat label="Eventos auditados (30 d)" value="48.290" icon="⚿" />
+      <Stat label="Eventos auditados (30 d)" value={0} icon="⚿" />
       <Stat label="Impersonaciones activas" value={ctx.impersonating ? 1 : 0} icon="↗" tone="amber" />
-      <Stat label="Accesos fallidos (24 h)" value={7} delta="-3" icon="!" tone="rose" />
-      <Stat label="Backups verificados" value="99.8%" icon="✓" tone="green" />
+      <Stat label="Accesos fallidos (24 h)" value={0} icon="!" tone="rose" />
+      <Stat label="Backups verificados" value="—" icon="✓" tone="green" />
     </div>
     <Tabs tabs={[{ id: "auditoria", label: "Auditoría" }, { id: "sesiones", label: "Sesiones" }, { id: "backup", label: "Backups y cifrado" }, { id: "cumplimiento", label: "Cumplimiento" }]} value={tab} onChange={setTab} />
     {tab === "auditoria" && <Panel title="Registro de auditoría" subtitle="Toda acción relevante queda registrada con actor, motivo y resultado" bodyClass="tight">
+      <div className="callout">No hay eventos de auditoría registrados en Neon.</div>
       <div className="filter-row" style={{ padding: "14px 16px 0" }}><input placeholder="Buscar evento…" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: 260 }} />
         <span style={{ marginLeft: "auto", color: "#8b93a1", fontSize: 11 }}>Retención: 5 años · inmutable</span></div>
       <Table columns={[
@@ -47,12 +41,8 @@ export function Security({ ctx }) {
       ]} rows={rows} />
     </Panel>}
     {tab === "sesiones" && <div className="two-col">
-      <Panel title="Sesiones activas" subtitle="37 sesiones · 5 administradores globales">
-        <div className="mini-list">
-          {[["María Gómez", "Chrome · Medellín", "hace 4 min"], ["Andrés Ruiz", "Edge · Bogotá", "hace 18 min"], ["Lucía Herrera", "Chrome · Cali", "hace 1 h"], ["Carlos Pineda", "VS Code API · IP fija", "hace 2 h"], ["Sofía Marín", "Safari · Montevideo", "hace 3 h"]].map(([n, d, t]) => (
-            <li key={n}><span className="mini-avatar">{n.slice(0, 2).toUpperCase()}</span><div style={{ flex: 1 }}><b>{n}</b><div style={{ color: "#8b93a1", fontSize: 10 }}>{d} · {t}</div></div><Btn size="xs" tone="danger" onClick={() => toast(`Sesión de ${n} cerrada`)}>Cerrar</Btn></li>
-          ))}
-        </div>
+      <Panel title="Sesiones activas" subtitle="Sesiones registradas">
+        <div className="callout">No hay sesiones activas registradas en Neon.</div>
       </Panel>
       <Panel title="Control de acceso">
         <Toggle label="MFA obligatorio para roles globales" hint="Aplica a Super Admin, Devops y Finanzas" value={true} onChange={() => toast("Política actualizada")} />
@@ -90,7 +80,7 @@ export function Security({ ctx }) {
         ))}
       </Panel>
       <Panel title="Solicitudes de datos">
-        <div className="mini-list"><li><span>◎</span> Portabilidad · Clínica Vida Plena · en proceso</li><li><span>◎</span> Eliminación · Ferretería Unión · revisión legal</li><li><span>✓</span> Rectificación · Moda Ébano · completada</li></div>
+        <div className="callout">No hay solicitudes de datos registradas en Neon.</div>
         <div className="callout">El Super Admin gestiona estas solicitudes sin leer datos operativos salvo autorización explícita.</div>
         <Btn size="sm" onClick={() => toast("Informe de cumplimiento generado")}>Generar informe</Btn>
       </Panel>
@@ -159,9 +149,7 @@ export function Operations({ ctx }) {
     </Panel>}
     {tab === "incidentes" && <div className="two-col">
       <Panel title="Línea de tiempo de incidentes">
-        {[["Hoy 08:12", "Latencia alta en facturación electrónica", "Resuelto en 18 min"], ["22 nov", "Webhooks con reintentos excesivos", "Mitigado"], ["18 nov", "Degradación de notificaciones en Europa", "Resuelto en 41 min"], ["12 nov", "Despliegue v2.13.8 rollback", "Resuelto en 9 min"]].map(([w, t, s]) => (
-          <div className="activity-item" key={t}><span className={`activity-dot ${s.startsWith("Resuelto") ? "" : "alert"}`}>!</span><div><b>{t}</b><p>{w} · {s}</p></div></div>
-        ))}
+        <div className="callout">No hay incidentes registrados en Neon.</div>
       </Panel>
       <Panel title="Reporte de incidente">
         <Field label="Título"><input placeholder="Descripción breve" /></Field>
@@ -180,24 +168,20 @@ export function Support({ ctx }) {
   const { tenants, setSection, toast } = ctx;
   const [tab, setTab] = useState("tickets");
   const [ticket, setTicket] = useState(null);
-  const tickets = [
-    { id: "#4827", tenant: "TransAndes", subject: "Error al generar guía de despacho", priority: "Alta", sla: "1 h 12 min", status: "Abierto", owner: "Lucía" },
-    { id: "#4826", tenant: "Café Aurora", subject: "No imprime el recibo de caja", priority: "Media", sla: "3 h 40 min", status: "En progreso", owner: "Andrés" },
-    { id: "#4825", tenant: "Academia Horizonte", subject: "Cambiar fecha de cobro de cuotas", priority: "Baja", sla: "18 h", status: "Abierto", owner: "Sin asignar" },
-    { id: "#4824", tenant: "Hotel Las Brisas", subject: "Sincronización de reservas", priority: "Alta", sla: "45 min", status: "Escalado", owner: "Carlos" },
-    { id: "#4823", tenant: "Spa Arena", subject: "Comisiones incorrectas", priority: "Media", sla: "Resuelto", status: "Cerrado", owner: "Lucía" },
-  ];
+  // Los tickets reales se consultan en Neon; no se inventan negocios ni casos.
+  const tickets = [];
   return <>
     <SectionHead eyebrow="Crecimiento" title="Soporte y éxito del cliente" description="Tickets con contexto del negocio, SLA por plan, salud del cliente, onboarding y comunicaciones."
       actions={<Btn tone="primary" icon="＋" onClick={() => toast("Nuevo ticket creado")}>Nuevo ticket</Btn>} />
     <div className="stat-grid">
       <Stat label="Tickets abiertos" value={tickets.filter((t) => t.status !== "Cerrado").length} icon="☏" />
-      <Stat label="SLA cumplido" value="94%" delta="+3%" icon="✓" tone="green" />
-      <Stat label="Salud media de clientes" value="82%" icon="♡" tone="amber" />
-      <Stat label="Onboarding completado" value="11 / 15" icon="▶" tone="rose" />
+      <Stat label="SLA cumplido" value="—" icon="✓" tone="green" />
+      <Stat label="Salud media de clientes" value={tenants.length ? Math.round(tenants.reduce((s, t) => s + Number(t.health || 0), 0) / tenants.length) + "%" : "—"} icon="♡" tone="amber" />
+      <Stat label="Onboarding completado" value={"0 / " + tenants.length} icon="▶" tone="rose" />
     </div>
     <Tabs tabs={[{ id: "tickets", label: "Tickets", count: tickets.length }, { id: "salud", label: "Salud del cliente" }, { id: "onboarding", label: "Onboarding" }, { id: "comunicaciones", label: "Comunicaciones" }]} value={tab} onChange={setTab} />
     {tab === "tickets" && <Panel title="Bandeja de tickets" bodyClass="tight">
+      <div className="callout">No hay tickets registrados en Neon.</div>
       <Table columns={[
         { key: "id", label: "Ticket", render: (t) => <span className="mono">{t.id}</span> },
         { key: "tenant", label: "Negocio" }, { key: "subject", label: "Asunto" },
@@ -223,7 +207,7 @@ export function Support({ ctx }) {
         ))}
       </Panel>
       <Panel title="Campañas y comunicaciones">
-        <div className="mini-list"><li><span>✉</span> Novedades del producto · 312 negocios</li><li><span>✉</span> Recordatorio de onboarding · 4 negocios</li><li><span>✉</span> Renovación de plan · 12 negocios</li><li><span>✉</span> Encuesta NPS · 86 negocios</li></div>
+        <div className="callout">No hay campañas registradas en Neon.</div>
         <Btn size="sm" tone="primary" onClick={() => toast("Campaña creada")} style={{ marginTop: 10 }}>Nueva campaña</Btn>
       </Panel>
     </div>}
@@ -491,12 +475,7 @@ export function Settings({ ctx }) {
       </div><Btn size="sm" onClick={() => toast("Variable agregada de forma segura")} style={{ marginTop: 10 }}>Agregar variable</Btn></Panel>
     </div>}
     {tab === "versiones" && <Panel title="Versiones y despliegues" subtitle="Historial, changelog y rollback">
-      <Table columns={[{ key: "v", label: "Versión" }, { key: "date", label: "Fecha" }, { key: "notes", label: "Notas" }, { key: "state", label: "Estado" }, { key: "acc", label: "", align: "right" }]}
-        rows={[
-          { id: 1, v: "v2.14.0", date: "24 nov 2026", notes: "Mejoras en Demos y auditoría", state: "Producción" },
-          { id: 2, v: "v2.13.8", date: "12 nov 2026", notes: "Corrección de facturación", state: "Anterior" },
-          { id: 3, v: "v2.13.0", date: "02 nov 2026", notes: "Nuevo constructor de reportes", state: "Anterior" },
-        ].map((r) => ({ ...r, state: <Tag tone={r.state === "Producción" ? "green" : "slate"}>{r.state}</Tag>, acc: r.state === "Producción" ? <Btn size="xs" onClick={() => toast("Rollback a v2.13.8 iniciado")}>Rollback</Btn> : <Btn size="xs" onClick={() => toast("Versión promovida a producción")}>Promover</Btn> }))} />
+      <div className="callout">El historial de despliegues se consulta en Cloudflare Workers; no se muestran versiones de ejemplo.</div>
     </Panel>}
     {tab === "datos" && <div className="two-col">
       <Panel title="Fuente de datos" subtitle="Neon es la fuente de verdad">

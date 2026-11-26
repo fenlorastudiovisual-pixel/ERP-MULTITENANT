@@ -296,7 +296,7 @@ export function Branding({ ctx }) {
 /* ─────────────────────────── Módulos y versiones ─────────────────────────── */
 
 export function Modules({ ctx }) {
-  const { toast } = ctx;
+  const { toast, tenants } = ctx;
   const [tab, setTab] = useState("catalogo");
   const [rollout, setRollout] = useState(25);
   const [selected, setSelected] = useState(null);
@@ -310,7 +310,6 @@ export function Modules({ ctx }) {
         { key: "label", label: "Módulo", render: (m) => <div style={{ display: "flex", alignItems: "center", gap: 9 }}><span className="module-icon">{m.label.slice(0, 1)}</span><div><b>{m.label}</b><div style={{ color: "#8b93a1", fontSize: 10 }}>{m.group}</div></div></div> },
         { key: "version", label: "Versión", render: (m) => <span className="mono">{versions[m.id]}</span> },
         { key: "group", label: "Categoría", render: (m) => <Tag tone={m.group === "Núcleo" ? "indigo" : "violet"}>{m.group}</Tag> },
-        { key: "adoption", label: "Adopción", render: (m) => `${20 + (m.id.charCodeAt(0) % 7) * 11}%` },
         { key: "state", label: "Estado", render: () => <Tag tone="green" dot>Estable</Tag> },
         { key: "acc", label: "", align: "right", render: (m) => <Btn size="xs" onClick={(e) => { e.stopPropagation(); setSelected(m); }}>Ver</Btn> },
       ]} rows={MODULES} />
@@ -348,7 +347,7 @@ export function Modules({ ctx }) {
         <h4 style={{ margin: "12px 0 8px", fontSize: 12 }}>Notas de versión</h4>
         <div className="mini-list"><li><span>＋</span> Mejoras de rendimiento en listados</li><li><span>＋</span> Nuevos campos personalizados</li><li><span>＋</span> Corrección de permisos por sede</li></div>
         <h4 style={{ margin: "14px 0 8px", fontSize: 12 }}>Negocios con el módulo activo</h4>
-        <div className="mini-list"><li><span>▦</span> Belleza del Valle · Crecimiento</li><li><span>▦</span> Distribuidora Norte · Empresa</li><li><span>▦</span> Agroverde S.A. · Global</li></div>
+        <div className="mini-list">{tenants.length ? tenants.map((t) => <li key={t.id}><span>▦</span> {t.name} · {t.plan}</li>) : <li><span>▦</span> Sin negocios registrados</li>}</div>
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}><Btn tone="primary" onClick={() => { setSelected(null); toast("Módulo actualizado"); }}>Guardar cambios</Btn></div>
       </>}
     </Modal>

@@ -2,7 +2,7 @@ import "./globals.css";
 
 export const metadata = {
   title: "ERP Multitenant — Super Admin",
-  description: "Prototipo navegable del Super Admin del ERP multitenant",
+  description: "Consola de administración del ERP multitenant",
 };
 
 export default function RootLayout({ children }) {
