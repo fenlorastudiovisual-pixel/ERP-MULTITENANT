@@ -43,6 +43,8 @@ Mientras esos dos secrets no existan, sigue funcionando el login con contraseña
 
 El plan gratuito de Cloudflare Zero Trust incluye hasta 50 usuarios.
 
+Nota: esta cuenta no ofrece la opción de proteger el Worker a nivel de Worker. La URL `workers.dev` puede mostrar la interfaz, pero `/api/me` y `/api/state` devuelven 401 sin un token válido de Access y el login por contraseña está desactivado. Para mayor rigor se puede crear una segunda aplicación Access con ese hostname como destino.
+
 ## Conectar Neon (Postgres gratuito)
 
 1. Crea un proyecto en **https://neon.tech** (plan Free, sin tarjeta).
