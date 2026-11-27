@@ -52,7 +52,18 @@ El prototipo funciona sin base de datos (datos en `localStorage`). Para conectar
 
 ## ERP operativo (Fase 3)
 
-El panel `/negocio` ya trabaja contra Neon con un solo modelo de datos y un solo libro contable por tenant. `t16` es **solo lectura**: todas las pruebas y escrituras ocurren en `t17_sandbox` (Samjuro Piloto). **Los datos actuales de ambos tenants son sintéticos, no pertenecen a Samjuro**: hay que importar la información real desde la Supabase de Samjuro en modo solo lectura antes de usar estas cifras como reales.
+El panel `/negocio` ya trabaja contra Neon con un solo modelo de datos y un solo libro contable por tenant. `t16` es **solo lectura**: todas las pruebas y escrituras ocurren en `t17_sandbox` (Samjuro Piloto).
+
+**El piloto ya contiene los datos reales de Samjuro**, importados desde su Supabase con un rol de solo lectura (`erp_reader`) y sin escribir nunca en el sistema real: 635 productos, 960 presentaciones, 158 clientes (151 únicos por documento), 131 pedidos y 5.415 líneas. El SKU validado fue `CH-ESM-208` (Esmalte #208 Aries). `t16` conserva sus datos sintéticos anteriores solo como referencia.
+
+La importación quedó registrada en `samjuro_stage.raw_tables` (Neon) y en `SAMJURO-EXPORT/raw/*.json`. Para repetirla:
+
+```bash
+cd superadmin-prototype
+node database/import-samjuro.mjs   # lee el staging, reemplaza solo t17_sandbox
+```
+
+El script no contiene credenciales: toma `DATABASE_URL` de `.env.local`. La fuente real **no tiene costos de proveedor** (0 de 960 presentaciones y 0 en el historial), por eso las utilidades muestran costo $0 hasta que se registren compras en el ERP. El IVA está incluido en los precios de Samjuro; el márgen se calcula restando el 19% antes de descontar el costo.
 
 ```bash
 cd superadmin-prototype

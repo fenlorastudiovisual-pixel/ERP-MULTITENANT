@@ -689,7 +689,7 @@ export default function BusinessPanel() {
 
       <div className="callout">Sesión de <b>{email}</b> como <b>{role}</b>. Productos, clientes, pedidos e inventario de <b>{tenant.name}</b> en tiempo real.</div>
       {tenant.id === "t17_sandbox" && <div className="callout amber">
-        <b>Datos de prueba, no información de Samjuro.</b> Los productos ('SKU-00001', 'Limpia Económico…'), clientes y pedidos que ves fueron generados para probar el sistema. Las cifras NO corresponden a tu empresa. Falta importar tus datos reales desde la Supabase de Samjuro en modo solo lectura.
+        <b>Piloto con datos reales importados desde la Supabase de Samjuro</b> (lectura sola; no se modificó tu sistema). Catálogo, clientes, pedidos y líneas ya son reales. <b>Aún no hay costo de proveedor registrado</b> en la fuente: las utilidades mostrarán margen completo hasta que se registren los costos aquí en el ERP.
       </div>}
       {(error || notice) && <div className={`callout ${error ? "amber" : "green"}`}>{error || notice}</div>}
 
@@ -1186,7 +1186,7 @@ export default function BusinessPanel() {
         <div className="stat-grid" style={{ gridTemplateColumns: "repeat(4,1fr)" }}>
           <Stat label="Ventas al cliente" value={money0(margins.kpis?.salesGross)} icon="↗" tone="indigo" hint="Precio final con IVA" />
           <Stat label="Ventas sin IVA" value={money0(margins.kpis?.salesNet)} icon="▤" tone="slate" hint={`IVA ${margins.ivaRate}% incluido`} />
-          <Stat label="Costo de proveedor" value={money0(margins.kpis?.cogs)} icon="↙" tone="amber" hint="Costo registrado en compras" />
+          <Stat label="Costo de proveedor" value={money0(margins.kpis?.cogs)} icon="↙" tone="amber" hint="Sin registro en la fuente; regístralo al recibir compras" />
           <Stat label="Utilidad bruta" value={money0(margins.kpis?.grossProfit)} icon="◎" tone="green" hint={`${Number(margins.kpis?.marginPct || 0).toFixed(1)}% sobre venta neta`} />
         </div>
 
@@ -1200,7 +1200,7 @@ export default function BusinessPanel() {
             <div><span>Utilidad bruta total</span><strong>{money0(margins.kpis?.grossProfit)}</strong></div>
           </div>
           <p style={{ color: "#8b93a1", fontSize: 12, marginTop: 12 }}>
-            Lo que el cliente paga incluye IVA. Para saber la utilidad real se quita el IVA al precio de venta y se resta el costo que registraste al recibir la mercancía del proveedor.
+            Lo que el cliente paga incluye IVA. Para saber la utilidad real se quita el IVA al precio de venta y se resta el costo que registres al recibir la mercancía del proveedor. La Supabase de Samjuro no tenía costos, por eso aparecen en $0 hasta registrarlos aquí.
           </p>
         </Panel>
 
