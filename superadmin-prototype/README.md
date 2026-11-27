@@ -1,6 +1,6 @@
-# ERP Multitenant — Prototipo del Super Admin
+# ERP Multitenant — Super Admin y ERP operativo
 
-Prototipo navegable del centro de control del nuevo ERP multitenant. Diseño independiente: no reutiliza código ni datos de ningún proyecto anterior.
+Centro de control del plataforma y panel operativo de cada negocio. Diseño independiente: no reutiliza código ni datos de ningún proyecto anterior. El foco actual es el ERP real de `/negocio`, no los prototipos de demos.
 
 ## Arrancar
 
@@ -249,15 +249,25 @@ npm run preview
 
 ## Qué incluye
 
-- **17 secciones** del Super Admin, agrupadas en Centro de control, Configuración, Confianza, Crecimiento y Sistema.
+- **16 secciones** del Super Admin, agrupadas en Centro de control, Configuración, Confianza, Crecimiento y Sistema. La sección «Demos» y el enlace «Crear y gestionar demos» fueron retirados.
 - **Panel de control** con KPIs globales, ingresos, módulos más usados, actividad y alertas.
 - **Tenants**: filtros, alta asistida, detalle con pestañas, clonar, suspender y cambiar modo de aislamiento.
 - **Planes y funciones**: editor visual de módulos (incluido / add-on / no disponible), límites, feature flags, precio y simulador.
-- **Demos reales**: centro en `/demos` con **14 nichos** y datos operativos completos, enlace público `/demo/<token>` interactivo, envío por WhatsApp con `wa.me`, captura de lead y conversión a tenant. No hay generación masiva: las demos se crean una a una y sus nombres son neutros por nicho, sin negocios falsos. La sección «Demos» de la consola muestra solo las demos guardadas en `demo_links`; no hay catálogo decorativo.
+- **ERP operativo** (`/negocio`): resumen con ventas y estado de pedidos, catálogo de **1.240 productos**, **480 clientes**, **620 pedidos** y **2.168 líneas** de Samjuro en Neon. Permite crear productos y clientes, armar pedidos desde el catálogo (precio tomado de la BD), descontar stock con movimientos, ajustar inventario, cambiar estados, ver facturas y activar MFA. Cada consulta usa `runAsTenant` con RLS; la identidad sale de la sesión con contraseña, nunca de la URL.
+- **Demos fuera de la consola**: el centro `/demos` ya no está enlazado desde el Super Admin. No se invierte en demos: el trabajo está en los ERP operativos contra Neon.
 - **Configuración**: usuarios/roles/SSO, idiomas y traducciones, localización fiscal, white-label con vista previa en vivo, módulos y versiones.
 - **Operaciones**: seguridad y auditoría, observabilidad, cuotas y colas, soporte con SLA, integraciones, migración de datos, BI global y ajustes del sistema.
 - **Persistencia**: Neon (JSONB con RLS) es la fuente de verdad; `localStorage` solo es una copia temporal mientras carga. Ya no hay botón que restablezca datos de ejemplo: los tenants se crean al convertir una demo y el tenant de prueba es Samjuro (`t16`).
 - **Sin datos decorativos**: Seguridad, Soporte, Operaciones, Facturación y Módulos ya no muestran negocios, tickets, eventos ni versiones inventados. Si Neon no tiene información, la sección muestra un estado vacío en lugar de rellenarla con ejemplos.
+
+## Datos operativos de Samjuro
+
+```bash
+npm run db:setup       # crea las 30 tablas con RLS forzado
+npm run db:seed-ops    # siembra 1.240 productos, 480 clientes y 620 pedidos en t16
+```
+
+El seed es idempotente: borra solo las operaciones de `t16` y las vuelve a crear. Los datos del panel `/negocio` se leen de `public.products`, `public.customers`, `public.orders`, `public.order_items` y `public.stock_movements`; las métricas de la consola NO mezclan esas tablas.
 
 ## Estructura
 
