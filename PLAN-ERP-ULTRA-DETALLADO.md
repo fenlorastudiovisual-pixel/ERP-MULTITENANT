@@ -602,4 +602,5 @@ Las tablas actuales se conservan como capa de compatibilidad hasta que la nueva 
 - Sandbox `t17_sandbox` (`76fa9913-4ee3-40c4-bd43-ff300ad78d61`) clonado desde `t16` (`03dac6f5-e99a-5fce-97f7-d15b9964c09d`) con `npm run db:sandbox`; conteos 1.240/480/620/2.168/1.980 intactos en Samjuro.
 - Núcleo financiero: `lib/erp/finance.js`, `lib/erp/permissions.js`, APIs `/negocio/api/finance/*`, pestaña «Finanzas» y selector de empresa con sesión firmada.
 - Validación real en Neon: factura `FV-000001`, cobro `PA-000001`, anticipo `PA-000002` y asientos `AS-000001` a `AS-000003` con débito = crédito en cabecera y líneas. `t16` sigue con 0 documentos financieros.
-- `npm run build` OK; commit, push y deploy incluidos en esta entrega.
+- `npm run build` OK; commit `72379db` pusheado.
+- Deploy Cloudflare completado: Worker `erp-multitenant`, versión `f20dc5de-ba50-42ac-a41e-139f36ce345b`; `/api/health` responde 200 en `https://erp-multitenant.fenlorastudiovisual.workers.dev`.
