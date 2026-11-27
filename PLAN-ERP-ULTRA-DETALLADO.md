@@ -2,7 +2,7 @@
 
 **Estado:** propuesta para aprobación. **No implementar más ERP hasta que confirms las decisiones del §14.**
 **Fecha:** 2026-11-26.
-**Alcance:** plataforma `ERP-MULTITENANT` (proyecto independiente), tenant real de prueba `t16` = Samjuro, producción `https://erp.fenloravisual.com`.
+**Alcance:** plataforma `ERP-MULTITENANT` (proyecto independiente), tenant real `t16` = Samjuro usado **solo como referencia de lectura**, tenant sandbox `t17_sandbox` para pruebas de escritura, producción `https://erp.fenloravisual.com`.
 
 ---
 
@@ -16,7 +16,7 @@
 | ¿Cada negocio manejaría un ERP? | Sí: cada **tenant** tiene su propio ERP (sus datos, su configuración, sus usuarios, su numeración y su RLS). Hoy existe 1 tenant real: Samjuro (`t16`). |
 | ¿Varios ERP para cada negocio? | No. Varios ERP para el mismo negocio romperían la fuente de verdad, duplicarían contabilidad y stock y multiplicarían integraciones. Solo se crea un tenant adicional cuando hay una **persona jurídica o unidad operativa realmente separada** que requiere balances propios. |
 | ¿Qué tendrá cada ERP? | Núcleo: maestros, inventario/valoración, compras, ventas, facturación, cartera, contabilidad, tesorería, BI y auditoría. Módulos verticales según perfil. Todo con roles, permisos, flujos, KPIs e integraciones. |
-| ¿Por dónde empezar? | Perfil **Retail/Distribuidora** sobre Samjuro: ya hay 1.240 productos, 480 clientes, 620 pedidos, 2.168 líneas y 1.980 movimientos reales en Neon. Es el único vertical con datos reales verificados. |
+| ¿Por dónde empezar? | Perfil **Retail/Distribuidora** con Samjuro como **referencia de solo lectura**. Sus 1.240 productos, 480 clientes, 620 pedidos, 2.168 líneas y 1.980 movimientos se usan para diseñar y verificar, nunca para probar escrituras. Las pruebas de escritura se hacen en un **tenant sandbox clonado** (`t17_sandbox`). |
 
 **Regla de oro:** si una función no se puede explicar con una tabla real, un rol real, un flujo real y un KPI real, no se implementa. Esto evita repetir el problema de las demos «bonitas pero inútiles».
 
@@ -102,6 +102,14 @@
 7. La consola muestra secciones que hoy no ejecutan acciones reales (planes, módulos, integraciones); el plan las convierte en configuración persistida.
 8. La sección «Demos» se mantiene visible pero vacía, sin botones ni enlaces.
 
+### 2.6 Regla de no intervención sobre Samjuro (decisión del usuario)
+
+- **Samjuro (`t16`) es de solo lectura.** No se crean, editan, cancelan ni eliminan productos, clientes, pedidos, movimientos ni facturas en ese tenant. No se ejecutan scripts de seed, migraciones con datos de prueba ni pruebas de escritura contra `t16`.
+- Se permiten únicamente `SELECT` para revisar la información real y validar que los reportes coincidan con los totales existentes.
+- Toda prueba que necesite escribir (emitir factura, registrar pago, ajustar stock, migrar, contabilizar) se ejecuta en **`t17_sandbox`**, un tenant creado por copia de la estructura y de los datos de Samjuro, con `tenant_id` propio y RLS propio.
+- El sandbox se crea con un script idempotente, se usa para verificar cada fase y se puede borrar y recrear sin consecuencias.
+- Antes y después de cada fase se ejecuta un `db:check` de solo lectura sobre `t16` que confirma que los conteos siguen siendo 1.240 / 480 / 620 / 2.168 / 1.980. Si cambian, se detiene el trabajo.
+
 ---
 
 ## 3. Modelo de negocio y aislamiento
@@ -130,6 +138,29 @@ Regla de migración: el código habla solo con la capa `runAsTenant(tenant_id, .
 - Los movimientos son inmutables: se corrigen con contramovimientos, nunca se borran.
 - Toda operación que afecte dinero o stock es una **transacción** con rollback y escritura en `audit_log`.
 - El super admin no lee datos operativos salvo impersonación auditada.
+
+### 3.4 Modelo profesional: suite modular con complementos internos, no sistemas separados
+
+Esta es la respuesta directa a la pregunta sobre «ERP contable vs. ERP visual» y «un panel vs. complementos».
+
+**Cómo lo hacen los sistemas con experiencia:**
+
+| Sistema | Patrón observado | Fuente |
+| --- | --- | --- |
+| **Gartner (definición de ERP)** | ERP es una *suite integrada* de aplicaciones que **comparten un modelo común de proceso y datos** (finance, HR, distribution, manufacturing, service, supply chain). No son sistemas independientes pegados. | `gartner.com/en/information-technology/topics/enterprise-resource-planning` |
+| **SAP Business One** | «Una sola solución ERP asequible para gestionar toda la empresa». Trae de serie finanzas, compras, inventario, ventas, CRM, producción y proyectos. Además tiene **más de 500 add-ons de partners** y extensiones verticales. Es decir: **núcleo integrado + complementos**, no un ERP por área. | `sap.com/products/erp/business-one.html` y solution brief 2025 |
+| **Odoo** | Apps instalables/desinstalables sobre **la misma instancia y la misma base de datos**: contabilidad, inventario, POS, WhatsApp, etc. El usuario ve un solo menú; los módulos activos cambian según licencia/configuración. | `odoo.com/documentation/18.0/applications.html` y catálogo de apps |
+| **Microsoft Dynamics 365 Business Central** | Núcleo financiero/operativo + extensiones de **AppSource** y agentes de IA incrustados en el flujo. Un solo entorno, capabilities adicionales por app. | `learn.microsoft.com` / AppSource / sitio oficial |
+| **Gartner MQ Cloud ERP 2025 + CIO 2026** | La arquitectura **modular/composable** es una característica *común* deseable, pero la mayoría sigue eligiendo **suite** por la integración mantenida por el proveedor; solo se añade best-of-breed cuando la necesidad supera el núcleo. Para 2027, >50 % de empresas orientadas a servicios buscarán un enfoque suite para capacidades fundacionales. | `gartner.com/doc/reprints?ct=251013…` y `cio.com/article/4121113` |
+
+**Traducción a nuestro producto:**
+
+1. **Si un negocio quiere solo contabilidad:** se activa solo el módulo financiero. No se le muestran tarjetas de restaurante, recetas ni envíos. Pero «solo contabilidad» **no significa solo pantallas de asientos**: para contar con un balance real necesita partners, impuestos, cuentas, secuencias, facturas, cartera, pagos y banco. Esos son **datos maestros del núcleo**, no adornos visuales. El módulo de inventario permanece desactivado y, si algún día se activa, sus movimientos **ya tienen una cuenta contable destino** y no requieren reentrada ni otro sistema.
+2. **Si un negocio quiere todo:** **un solo panel, una sola sesión, un solo modelo de datos y un solo libro contable**. Los módulos se comportan como **complementos dentro de ese panel** (activación por `tenant_modules` + `feature_flags` + permisos), no como 12 aplicaciones con 12 logins. El usuario con permiso de `accounting` ve finanzas; el de `warehouse` ve almacén; ambos ven el mismo pedido real.
+3. **Cuándo sí usar un sistema externo (best-of-breed):** cuando una capacidad supera claramente el núcleo —por ejemplo facturación DIAN certificada, nómina especializada o programación finita de manufactura—. En ese caso se integra por API/CSV con `ref_type/ref_id` y se concilia; **no se construye un segundo ERP paralelo**.
+4. **BI no es el ERP:** los tableros son una capa de lectura sobre los mismos datos. Un panel bonito sin asientos, documentos y auditoría es exactamente el error de las demos que ya descartamos.
+
+**Regla derivada para el código:** cada módulo nuevo debe poder desactivarse sin romper el núcleo (feature flag), pero al activarse debe escribir en el mismo `tenant_id`, el mismo `audit_log` y, cuando corresponda, el mismo `journal_entries`. Si un módulo crea su propia base de clientes o su propio libro contable, está mal diseñado.
 
 ---
 
@@ -183,7 +214,7 @@ Un ERP lógico por tenant; el perfil decide qué se activa. Matriz resumida (●
 
 ### 5.1 Definición de los 12 perfiles
 
-1. **Retail / Distribuidora** (Samjuro, inicial). Catálogo, stock multi-almacén, pedidos, facturación, cartera, rutas, WhatsApp. KPI: rotación, quiebre, Margen por línea.
+1. **Retail / Distribuidora** (inicial; Samjuro es la referencia real de solo lectura). Catálogo, stock multi-almacén, pedidos, facturación, cartera, rutas, WhatsApp. KPI: rotación, quiebre, margen por línea.
 2. **Restaurante / cafetería**. Mesas, comandas, cocina, recetas, mermas, POS, propinas, facturación. KPI: ticket promedio, food cost, tiempo de preparación.
 3. **Farmacia / droguería**. Lotes, vencimientos, dispensación, recetas, control de temperaturas. KPI: productos por vencer, quiebre crítico.
 4. **eCommerce / tienda online**. Catálogo sincronizado, pedidos, pasarela, envíos, devoluciones, suscripciones. KPI: conversión, cancelaciones, día de pago.
@@ -259,7 +290,7 @@ Cada módulo se entrega con: tablas, campos críticos, funciones, roles que lo o
 - Reglas: numeración consecutiva sin huecos; una factura nunca se edita después de emitida; se corrige con nota crédito; total = líneas + impuestos − descuentos; redondeo a 2 decimales.
 - Flujo: pedido entregado → borrador → revisión contable → emisión → envío → contabilización → cobro.
 - KPI: facturado por mes, facturas vencidas, nota crédito sobre ventas, DSO.
-- Criterio de aceptación: emitir factura desde un pedido real de Samjuro y ver el asiento contable generado.
+- Criterio de aceptación: emitir factura en `t17_sandbox` desde un pedido clonado de Samjuro y ver el asiento contable generado; `t16` permanece con sus conteos originales.
 
 ### 6.6 Cartera, cobros y pagos
 
@@ -499,16 +530,16 @@ Las tablas actuales se conservan como capa de compatibilidad hasta que la nueva 
 
 ---
 
-## 14. Decisiones que necesito que confirmes antes de seguir
+## 14. Decisiones: estado y pendientes
 
-1. **¿Aprobás el modelo?** 1 ERP lógico por tenant con perfiles verticales, no un ERP separado por nicho ni varios por negocio. (Recomendado.)
-2. **¿Confirmás el vertical inicial?** Retail/Distribuidora con Samjuro (`t16`). (Recomendado: es el único con datos reales.)
+1. **Modelo («suite modular con complementos internos», §3.4).** **Pendiente de tu confirmación explícita** después de la explicación con fuentes: 1 ERP lógico por tenant, un solo panel y un solo libro contable; los módulos se activan/desactivan como complementos dentro de esa suite; solo se recurre a best-of-breed externo si el núcleo no llega.
+2. **¿Confirmás el vertical inicial?** Retail/Distribuidora, con Samjuro (`t16`) como referencia de solo lectura y `t17_sandbox` para probar. **Confirmado por el usuario.**
 3. **¿Cada empresa jurídica del mismo dueño debe ser otro tenant?** Propuesta: sí, si factura con NIT propio o requiere balance separado; si es solo una sucursal, se modela como almacén/centro de costo dentro del mismo tenant.
-4. **¿Valoración de inventario inicial?** Propuesta: promedio ponderado, con opción FIFO en la configuración. Samjuro arranca con el coste actual de `products`.
-5. **¿Facturación electrónica DIAN ahora o después?** Propuesta: estructura lista ahora, envío real después de tener resolución/certificado. Mientras tanto, factura interna numerada con PDF/QR.
+4. **¿Valoración de inventario inicial?** Propuesta: promedio ponderado, con opción FIFO en la configuración. El sandbox arranca con el coste actual de `products` copiado desde Samjuro; el tenant real no se modifica.
+5. **Facturación electrónica DIAN.** **Confirmado: preparar ahora, activar después.** Estructura, numeración, UUID/QR y eventos listos; envío real solo con resolución/certificado. Mientras tanto, factura interna numerada con PDF/QR.
 6. **¿MFA obligatorio para el tenant?** Propuesta: opcional hoy (`tenant_mfa` ya existe), obligatorio para `owner` en Fase 5.
 7. **¿Se conservan las tablas operativas actuales?** Propuesta: sí, como compatibilidad; se migran con copia y se dejan de usar cuando la nueva UI esté validada.
-8. **¿Qué sección se implementa primero después del núcleo?** Propuesta: contabilidad + facturación operativa + cartera (Fase 2), antes que restaurante u otros verticales.
+8. **Primera fase de implementación.** **Confirmado:** núcleo + contabilidad/facturación/cartera (Fase 2), antes que restaurante u otros verticales.
 9. **¿Presupuesto/tiempo objetivo?** Propuesta: fases de 1–2 semanas cada una con criterio de aceptación en Neon; sin fecha «big bang».
 
 ---
@@ -517,9 +548,9 @@ Las tablas actuales se conservan como capa de compatibilidad hasta que la nueva 
 
 | Fase | Entregable | Tablas / APIs | Criterio de aceptación real |
 | --- | --- | --- | --- |
-| **0. Gobernanza (actual)** | Este plan + sección Demos vacía + README | — | Plan aprobado; build OK; consola con 17 secciones, Demos sin acciones |
-| **1. Núcleo maestro y sequences** | Migración de `products/customers/orders/items/movimientos` a nuevo modelo sin borrar originales; `sequences`; `role_permissions` | `items`, `partners`, `sales_orders`, `sequences`, `role_permissions` | 1.240/480/620/2.168/1.980 filas migradas y contadas en Neon; numeración concurrente sin duplicados |
-| **2. Finanzas mínimas** | Factura operativa, cartera, pagos, contabilidad de asientos y reportes básicos | `invoices_ops`, `invoice_lines`, `receivables`, `payments_in`, `journal_entries`, `journal_lines`, `accounts`, `periods` | Pedido real → factura → pago → asiento balanceado → P&L; cartera por edades consultable |
+| **0. Gobernanza (actual)** | Este plan + sección Demos vacía + README | — | Plan presentado y build OK; consola con 17 secciones, Demos sin acciones; arquitectura pendiente de confirmación |
+| **1. Núcleo maestro y sequences** | Creación de `t17_sandbox` por copia y migración de `products/customers/orders/items/movimientos` al nuevo modelo sin borrar originales; `sequences`; `role_permissions` | `items`, `partners`, `sales_orders`, `sequences`, `role_permissions` | 1.240/480/620/2.168/1.980 filas copiadas y contadas en el sandbox; numeración concurrente sin duplicados; `t16` sin cambios |
+| **2. Finanzas mínimas** | Factura operativa, cartera, pagos, contabilidad de asientos y reportes básicos | `invoices_ops`, `invoice_lines`, `receivables`, `payments_in`, `journal_entries`, `journal_lines`, `accounts`, `periods` | Pedido clonado en sandbox → factura → pago → asiento balanceado → P&L; cartera por edades consultable; `t16` sin cambios |
 | **3. Inventario y compras** | Multi-almacén, valoración, conteos, OC, recepciones, proveedores | `warehouses`, `stock_balances`, `stock_movements_v2`, `purchase_orders`, `purchase_receipts`, `payables` | Transferencia entre almacenes; ajuste con motivo; recepción que genera entrada + asiento |
 | **4. CRM/WhatsApp y BI** | Leads, oportunidades, `wa.me`, tableros por rol | `leads_ops`, `opportunities`, `whatsapp_links`, `dashboard_widgets`, `report_definitions` | Enlace `wa.me` con datos reales; KPI con drill-down al documento |
 | **5. Seguridad avanzada** | Permisos granulares completos, auditoría enriquecida, MFA owner, impersonación | `role_permissions`, `audit_log` extendido, `tenant_mfa` | Matriz RBAC aplicada en API; intento de acción prohibida devuelve 403 y deja auditoría |
@@ -528,7 +559,7 @@ Las tablas actuales se conservan como capa de compatibilidad hasta que la nueva 
 | **8. Perfiles restantes** | Farmacia, eCommerce, construcción, manufactura, logística, clínica, educación, inmobiliaria, profesional | Tablas del §7 | Un flujo completo por perfil con datos semilla **generados bajo demanda, no demos públicas** |
 | **9. IA y automatización** | Sugerencias con feedback humano | `ai_suggestions`, `ai_feedback` | 0 acciones automáticas sensibles; 100 % de sugerencias revisadas |
 
-**Regla de paso de fase:** no se inicia la fase N+1 hasta que el criterio de aceptación de N se verifique en Neon y en producción con el tenant `t16`.
+**Regla de paso de fase:** no se inicia la fase N+1 hasta que el criterio de aceptación de N se verifique en Neon y en producción con `t17_sandbox`, y un `db:check` de solo lectura confirme que `t16` sigue con 1.240 / 480 / 620 / 2.168 / 1.980.
 
 ---
 
