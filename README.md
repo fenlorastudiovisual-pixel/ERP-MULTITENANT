@@ -56,7 +56,7 @@ El panel `/negocio` ya trabaja contra Neon con un solo modelo de datos y un solo
 
 **El piloto ya contiene los datos reales de Samjuro**, importados desde su Supabase con un rol de solo lectura (`erp_reader`) y sin escribir nunca en el sistema real: 635 productos, 960 presentaciones, 158 clientes (151 únicos por documento), 131 pedidos y 5.415 líneas. El SKU validado fue `CH-ESM-208` (Esmalte #208 Aries). `t16` conserva sus datos sintéticos anteriores solo como referencia.
 
-La importación quedó registrada en `samjuro_stage.raw_tables` (Neon) y en `SAMJURO-EXPORT/raw/*.json`. Para repetirla:
+La importación quedó registrada en `samjuro_stage.raw_tables` (Neon) y en `SAMJURO-EXPORT/raw/*.json`: **19 tablas reales** (catálogo, clientes, pedidos, cotizaciones, historial de precios, eventos, configuración, vendedoras — sin `pin` — y promociones). Para repetirla:
 
 ```bash
 cd superadmin-prototype
