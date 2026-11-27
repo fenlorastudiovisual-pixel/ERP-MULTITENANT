@@ -14,6 +14,7 @@ export const SECTIONS = [
   { id: "security", label: "Seguridad y auditoría", icon: "⚿", group: "Confianza" },
   { id: "operations", label: "Operaciones", icon: "⌁", group: "Confianza" },
   { id: "support", label: "Soporte y éxito", icon: "☏", group: "Crecimiento" },
+  { id: "demos", label: "Demos", icon: "◇", group: "Crecimiento" },
   { id: "integrations", label: "Integraciones", icon: "⤨", group: "Crecimiento" },
   { id: "data", label: "Datos y migración", icon: "⇅", group: "Crecimiento" },
   { id: "bi", label: "Reportes y BI", icon: "▧", group: "Crecimiento" },

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { SECTIONS, GROUPS, TENANTS_SEED, PLAN_SEED, USERS_SEED, LANGUAGES, TRANSLATIONS_SEED } from "../lib/data";
 import { Dashboard, Tenants, Plans, Billing } from "../components/sections-core";
-import { Users, Languages, Localization, Branding, Modules } from "../components/sections-config";
+import { Users, Languages, Localization, Branding, Modules, Demos } from "../components/sections-config";
 import { Security, Operations, Support, Integrations, Data, BI, Settings } from "../components/sections-ops";
 
 const STORAGE_KEY = "erp-multitenant-superadmin-v1";
@@ -14,7 +14,7 @@ const COMPONENTS = {
   dashboard: Dashboard, tenants: Tenants, plans: Plans, billing: Billing,
   users: Users, languages: Languages, localization: Localization, branding: Branding,
   modules: Modules, security: Security, operations: Operations,
-  support: Support, integrations: Integrations, data: Data, bi: BI, settings: Settings,
+  support: Support, demos: Demos, integrations: Integrations, data: Data, bi: BI, settings: Settings,
 };
 
 // Solo el tenant de prueba real se mantiene como respaldo local cuando no hay Neon.
@@ -316,7 +316,7 @@ export default function Page() {
             </div>
           ))}
         </nav>
-        <div className="sidebar-foot">ERP v0.2.0 · {dbMode ? "Neon conectado" : "Datos locales"}<br />16 secciones · tenants reales</div>
+        <div className="sidebar-foot">ERP v0.2.0 · {dbMode ? "Neon conectado" : "Datos locales"}<br />{SECTIONS.length} secciones · tenants reales</div>
       </aside>
 
       <main className="main">

@@ -89,7 +89,9 @@ Si hay que crear el token de API otra vez:
 
 ## Demos reales: de un negocio semilla a un cliente
 
-Ya no son tarjetas decorativas. Cada demo es un panel navegable con datos operativos guardados en Neon.
+**Estado actual: en pausa.** La sección «Demos» existe en la consola, pero no muestra demos ni acciones. Lo que sigue describe el flujo que quedó documentado para reactivarlo más adelante; no se usa mientras el foco está en los ERP reales.
+
+Cuando estuvieron activas, cada demo era un panel navegable con datos operativos guardados en Neon.
 
 1. Entra en **https://erp.fenloravisual.com/demos** (dentro de la consola del Super Admin).
 2. Elige el nicho, escribe un nombre de demo (por ejemplo, `Demo Farmacia`) y pulsa **Crear demo**. Se generan 24 productos, 26 clientes, 42 pedidos, 24 facturas y los módulos propios del nicho (agenda, obras, producción, envíos, fincas, suscripciones o alertas).
@@ -249,7 +251,7 @@ npm run preview
 
 ## Qué incluye
 
-- **16 secciones** del Super Admin, agrupadas en Centro de control, Configuración, Confianza, Crecimiento y Sistema. La sección «Demos» y el enlace «Crear y gestionar demos» fueron retirados.
+- **17 secciones** del Super Admin, agrupadas en Centro de control, Configuración, Confianza, Crecimiento y Sistema. La sección «Demos» está visible pero **vacía**: no tiene tarjetas, enlaces ni botones de creación. El foco actual son los ERP operativos. Ver `../PLAN-ERP-ULTRA-DETALLADO.md`.
 - **Panel de control** con KPIs globales, ingresos, módulos más usados, actividad y alertas.
 - **Tenants**: filtros, alta asistida, detalle con pestañas, clonar, suspender y cambiar modo de aislamiento.
 - **Planes y funciones**: editor visual de módulos (incluido / add-on / no disponible), límites, feature flags, precio y simulador.

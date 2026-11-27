@@ -354,4 +354,26 @@ export function Modules({ ctx }) {
   </>;
 }
 
+/* ─────────────────────────── Demos (en pausa) ─────────────────────────── */
+
+export function Demos({ ctx }) {
+  return <>
+    <SectionHead
+      eyebrow="Crecimiento"
+      title="Demos"
+      description="Sección reservada para los enlaces públicos. Se mantiene visible, pero hoy no contiene demos."
+    />
+    <Panel title="Estado de la sección" subtitle="Sin demos activas mientras el foco está en los ERP operativos">
+      <div className="empty-state">
+        <span>◇</span>
+        <b>No hay demos para mostrar</b>
+        <p>La sección existe, pero no hay tarjetas, enlaces ni acciones de demostración. El trabajo actual son los ERP reales contra Neon.</p>
+      </div>
+      <div className="callout">
+        Cuando se reactive el flujo, aquí se podrán revisar los enlaces compartidos y sus visitas. Por ahora no se crean ni se listan demos.
+      </div>
+    </Panel>
+  </>;
+}
+
 
