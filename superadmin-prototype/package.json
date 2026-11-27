@@ -12,6 +12,8 @@
     "db:sandbox": "node database/seed-sandbox.mjs",
     "db:add-owner": "node database/add-tenant-owner.mjs",
     "db:verify-phase3": "node database/verify-phase3.mjs",
+    "db:import-samjuro": "node database/import-samjuro.mjs",
+    "db:import-samjuro-extras": "node database/import-samjuro-extras.mjs",
     "db:seed-ops": "node database/seed-tenant-ops.mjs",
     "db:check": "node database/check.mjs",
     "db:inspect": "node database/inspect.mjs",

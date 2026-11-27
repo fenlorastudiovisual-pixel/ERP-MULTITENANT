@@ -60,10 +60,13 @@ La importación quedó registrada en `samjuro_stage.raw_tables` (Neon) y en `SAM
 
 ```bash
 cd superadmin-prototype
-node database/import-samjuro.mjs   # lee el staging, reemplaza solo t17_sandbox
+npm run db:import-samjuro          # lee el staging, reemplaza solo t17_sandbox
+npm run db:import-samjuro-extras   # cotizaciones, abonos, asientos y agotados
 ```
 
-El script no contiene credenciales: toma `DATABASE_URL` de `.env.local`. La fuente real **no tiene costos de proveedor** (0 de 960 presentaciones y 0 en el historial), por eso las utilidades muestran costo $0 hasta que se registren compras en el ERP. El IVA está incluido en los precios de Samjuro; el márgen se calcula restando el 19% antes de descontar el costo.
+El script no contiene credenciales: toma `DATABASE_URL` de `.env.local`. La fuente real **no tiene costos de proveedor** (0 de 960 presentaciones y 0 en el historial), por eso las utilidades muestran costo $0 hasta que se registren compras en el ERP. El IVA está incluido en los precios de Samjuro; el margen se calcula restando el 19% antes de descontar el costo.
+
+Las **103 cotizaciones** y sus **56 abonos** ya están mapeados al libro operativo: se importan como documentos `COT-…` en `invoices_ops`, con su cartera, sus pagos `PA-COT-…`, sus asientos balanceados y la antigüedad de cartera. Total cotizado `$75.537.734`, abonado `$36.174.078` y saldo `$39.363.656`. Los 2 productos marcados como agotados en Supabase quedaron señalados en el catálogo sin desactivarlos.
 
 ```bash
 cd superadmin-prototype
