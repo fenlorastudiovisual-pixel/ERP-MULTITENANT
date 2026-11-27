@@ -10,6 +10,7 @@
     "db:erp-core": "node database/migrate-erp-core.mjs",
     "db:erp-inventory": "node database/migrate-erp-inventory.mjs",
     "db:sandbox": "node database/seed-sandbox.mjs",
+    "db:add-owner": "node database/add-tenant-owner.mjs",
     "db:verify-phase3": "node database/verify-phase3.mjs",
     "db:seed-ops": "node database/seed-tenant-ops.mjs",
     "db:check": "node database/check.mjs",

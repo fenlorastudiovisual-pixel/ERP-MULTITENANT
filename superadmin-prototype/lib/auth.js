@@ -9,15 +9,16 @@ export const SESSION_COOKIE = "erp_session";
 export const TENANT_SESSION_COOKIE = "erp_tenant_session";
 export const SESSION_MAX_AGE = 8 * 60 * 60; // 8 horas
 const SESSION_VERSION = 1;
-// Recomendación actual de OWASP para PBKDF2-HMAC-SHA256. Los hashes antiguos
-// siguen verificándose; se actualizan solos cuando el usuario entra.
-const PBKDF2_ITERATIONS = 600000;
+// Cloudflare Workers limita PBKDF2 a 100.000 iteraciones, así que ese es el
+// máximo que puede verificarse en producción. Los hashes antiguos de 600.000
+// se marcan para rehash; si el usuario entra desde Node se actualizan solos.
+const PBKDF2_ITERATIONS = 100000;
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_MINUTES = 15;
 
 export function needsRehash(stored) {
   const iterations = Number(String(stored || "").split("$")[1]);
-  return Boolean(iterations) && iterations < PBKDF2_ITERATIONS;
+  return Boolean(iterations) && iterations !== PBKDF2_ITERATIONS;
 }
 
 function toBase64Url(input) {

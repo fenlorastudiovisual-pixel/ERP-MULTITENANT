@@ -134,6 +134,7 @@ npm run db:migrate-state  # backfill del JSONB a las tablas operativas (idempote
 npm run db:migrate-auth   # sesiones rotables y MFA del panel del negocio (idempotente)
 npm run db:migrate-demos  # tabla de demos compartibles con datos reales (idempotente)
 npm run db:rls-check      # comprueba que RLS se aplica de verdad
+npm run db:add-owner      # crea/actualiza un dueño con contraseña hasheada en un tenant
 ```
 
 Los UUID son deterministas: `t1`, `d7` o `inicio` siempre producen el mismo UUID, por lo que la migración se puede repetir sin duplicados.
@@ -152,7 +153,7 @@ Ese script escribe `DATABASE_APP_URL` en `.env.local` y `.dev.vars` (ninguno se 
 
 `npm run db:check` imprime ambos contextos y `npm run db:rls-check` confirma que una consulta sin contexto devuelve 0 filas.
 
-> **Seguridad:** con Cloudflare Access activo, la consola valida el JWT de Access en cada petición y comprueba que el correo corresponda a un `super_admin` activo en Neon. Sin Access, el modo de respaldo usa contraseña hasheada con PBKDF2 y cookie firmada con HMAC. `SUPERADMIN_KEY` es secreto del servidor y nunca viaja al navegador. El panel del negocio usa su propia cookie, contraseña con PBKDF2 de 600.000 iteraciones y MFA TOTP opcional; Access solo protege la recuperación.
+> **Seguridad:** con Cloudflare Access activo, la consola valida el JWT de Access en cada petición y comprueba que el correo corresponda a un `super_admin` activo en Neon. Sin Access, el modo de respaldo usa contraseña hasheada con PBKDF2 y cookie firmada con HMAC. `SUPERADMIN_KEY` es secreto del servidor y nunca viaja al navegador. El panel del negocio usa su propia cookie, contraseña con PBKDF2 de 100.000 iteraciones (máximo soportado por Cloudflare Workers) y MFA TOTP opcional; Access solo protege la recuperación.
 
 ## Desplegar en Cloudflare Workers (OpenNext)
 
@@ -193,7 +194,7 @@ El negocio **no entra desde la consola del Super Admin**. Tiene su propia puerta
 
 - El usuario entra con el **correo del negocio y su contraseña**. Cloudflare Access **no interviene** en la entrada diaria.
 - Si no tiene contraseña o la olvidó, abre **https://erp.fenloravisual.com/negocio/recuperar**: ahí sí Cloudflare Access verifica su correo con **One-time PIN** y la app le permite crear o cambiar la contraseña. Access no "entrega" contraseñas: solo confirma quién es el usuario.
-- La contraseña usa PBKDF2 con **600.000 iteraciones**, cookie propia `erp_tenant_session` separada de la del Super Admin y rotación de sesiones al cambiar la contraseña. Opcionalmente se puede activar **MFA con app de autenticación (TOTP)** desde «Seguridad de tu cuenta».
+- La contraseña usa PBKDF2 con **100.000 iteraciones** (límite de Cloudflare Workers), cookie propia `erp_tenant_session` separada de la del Super Admin y rotación de sesiones al cambiar la contraseña. Opcionalmente se puede activar **MFA con app de autenticación (TOTP)** desde «Seguridad de tu cuenta».
 - El negocio se deduce del correo verificado y de `public.tenant_members`; **no se puede elegir con la URL**.
 - Los datos se leen con el contexto RLS de ese tenant. El Super Admin no puede abrir este panel.
 - Muestra plan, límites, módulos, equipo, salud y facturas del negocio.
@@ -201,6 +202,15 @@ El negocio **no entra desde la consola del Super Admin**. Tiene su propia puerta
 - La consola del Super Admin ya no tiene el botón «Entrar al negocio».
 
 **Primera vez:** abre `/negocio/recuperar`, verifica tu correo con el PIN, crea la contraseña y después entra normalmente por `/negocio`.
+
+Para dar acceso de prueba a otra persona sin pasar por el PIN (por ejemplo al correo dueño del sandbox), usa el script administrativo; la contraseña viaja por variable de entorno y nunca se imprime ni se versiona:
+
+```bash
+TENANT_OWNER_EMAIL=correo@ejemplo.com \
+TENANT_OWNER_PASSWORD=clave-segura \
+TENANT_OWNER_KEY=t17_sandbox \
+npm run db:add-owner
+```
 
 #### Alta de un negocio (flujo correcto)
 
