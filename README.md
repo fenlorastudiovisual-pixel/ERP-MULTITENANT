@@ -64,7 +64,8 @@ npm run build
 npm run dev               # http://localhost:8790
 ```
 
-- Las sesiones nuevas entran por defecto al sandbox; el panel muestra «Samjuro Sandbox» en la pestaña **Detalle**.
+- Las sesiones nuevas entran por defecto al sandbox, llamado **Samjuro Piloto**; el panel lo muestra en la pestaña **Detalle**.
+- La pestaña **Utilidades** muestra precio final con IVA, precio sin IVA, costo de proveedor, utilidad bruta y margen por producto y por pedido. El IVA se excluye del margen porque no es ganancia.
 - **Finanzas** emite facturas desde pedidos confirmados/entregados, registra pagos y consulta cartera y asientos.
 - **Inventario** gestiona almacenes, transferencias, ajustes con motivo, conteos físicos y valoración promedio/FIFO en una sola vista.
 - **Compras** crea y aprueba pedidos a proveedores (partners), registra recepciones y genera entrada de stock más asiento balanceado `1510/1355/2405`.

@@ -35,7 +35,7 @@ await sql`
   insert into public.tenants
     (slug, source_key, name, niche, plan_id, country, city, status, isolation_mode, region,
      owner_email, health_score, brand, settings)
-  select 'samjuro-sandbox', 't17_sandbox', 'Samjuro Sandbox', s.niche, s.plan_id,
+  select 'samjuro-sandbox', 't17_sandbox', 'Samjuro Piloto', s.niche, s.plan_id,
          s.country, s.city, 'active', 'pool', 'america', s.owner_email, 100, s.brand, s.settings
   from public.tenants s where s.id = ${source.id}::uuid
   on conflict (slug) do update set

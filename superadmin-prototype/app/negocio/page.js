@@ -13,6 +13,7 @@ const TABS = [
   { id: "facturacion", label: "Finanzas" },
   { id: "inventario", label: "Inventario" },
   { id: "compras", label: "Compras" },
+  { id: "utilidades", label: "Utilidades" },
   { id: "seguridad", label: "Seguridad" },
   { id: "detalle", label: "Detalle" },
 ];
@@ -28,6 +29,7 @@ const STATUS = { active: "Activo", trial: "Prueba", suspended: "Suspendido", arc
 const MODE = { pool: "Pool", bridge: "Bridge", silo: "Silo" };
 
 const money = (value) => "$ " + Number(value || 0).toLocaleString("es-CO");
+const money0 = (value) => money(Math.round(Number(value || 0)));
 const compact = (value) => {
   const n = Number(value || 0);
   if (n >= 1e9) return `$ ${(n / 1e9).toFixed(1)} mil M`;
@@ -123,6 +125,7 @@ export default function BusinessPanel() {
     expectedDate: "", notes: "",
   });
   const [purchaseLines, setPurchaseLines] = useState([]);
+  const [margins, setMargins] = useState({ kpis: null, byItem: [], byOrder: [], ivaRate: 19 });
   const [countModal, setCountModal] = useState(false);
   const [countWarehouse, setCountWarehouse] = useState("");
   const [countRows, setCountRows] = useState([]);
@@ -227,6 +230,13 @@ export default function BusinessPanel() {
     setError("");
   }, []);
 
+  const loadMargins = useCallback(async () => {
+    const { ok, json } = await jsonRequest("/negocio/api/margins/overview");
+    if (!ok) return setError(json.error || "No se pudo cargar las utilidades");
+    setMargins(json);
+    setError("");
+  }, []);
+
   async function load() {
     const { ok, status, json } = await jsonRequest("/negocio/api/me");
     if (ok) {
@@ -251,10 +261,11 @@ export default function BusinessPanel() {
     if (tab === "facturacion") loadFinance();
     if (tab === "inventario") loadInventory();
     if (tab === "compras") { loadPurchases(); loadInventory(); }
+    if (tab === "utilidades") { loadMargins(); loadInventory(); }
     if (tab === "productos") loadProducts();
     if (tab === "clientes") loadCustomers();
     if (tab === "pedidos") loadOrders();
-  }, [view, tab, loadOverview, loadFinance, loadInventory, loadPurchases, loadProducts, loadCustomers, loadOrders]);
+  }, [view, tab, loadOverview, loadFinance, loadInventory, loadPurchases, loadMargins, loadProducts, loadCustomers, loadOrders]);
 
   useEffect(() => {
     if (!notice) return;
@@ -1167,6 +1178,57 @@ export default function BusinessPanel() {
         </div>
       </>}
 
+      {/* ── Utilidades ──────────────────────────────────────────────────── */}
+      {tab === "utilidades" && <>
+        <div className="stat-grid" style={{ gridTemplateColumns: "repeat(4,1fr)" }}>
+          <Stat label="Ventas al cliente" value={money0(margins.kpis?.salesGross)} icon="↗" tone="indigo" hint="Precio final con IVA" />
+          <Stat label="Ventas sin IVA" value={money0(margins.kpis?.salesNet)} icon="▤" tone="slate" hint={`IVA ${margins.ivaRate}% incluido`} />
+          <Stat label="Costo de proveedor" value={money0(margins.kpis?.cogs)} icon="↙" tone="amber" hint="Costo registrado en compras" />
+          <Stat label="Utilidad bruta" value={money0(margins.kpis?.grossProfit)} icon="◎" tone="green" hint={`${Number(margins.kpis?.marginPct || 0).toFixed(1)}% sobre venta neta`} />
+        </div>
+
+        <Panel title="Cómo se calcula la utilidad" subtitle="El IVA no es ganancia: se resta antes de calcular el margen">
+          <div className="kv">
+            <div><span>Precio final al cliente</span><strong>{money0(margins.byItem?.[0]?.sale_price)}</strong></div>
+            <div><span>Precio sin IVA ({margins.ivaRate}%)</span><strong>{money0(margins.byItem?.[0]?.unitNet)}</strong></div>
+            <div><span>IVA recaudado</span><strong>{money0(margins.kpis?.iva)}</strong></div>
+            <div><span>Último costo de proveedor</span><strong>{money0(margins.byItem?.[0]?.last_cost)}</strong></div>
+            <div><span>Costo promedio ponderado</span><strong>{money0(margins.byItem?.[0]?.average_cost)}</strong></div>
+            <div><span>Utilidad bruta total</span><strong>{money0(margins.kpis?.grossProfit)}</strong></div>
+          </div>
+          <p style={{ color: "#8b93a1", fontSize: 12, marginTop: 12 }}>
+            Lo que el cliente paga incluye IVA. Para saber la utilidad real se quita el IVA al precio de venta y se resta el costo que registraste al recibir la mercancía del proveedor.
+          </p>
+        </Panel>
+
+        <Panel title="Utilidad por producto" subtitle="Precio final, costo de proveedor y margen por unidad vendida" bodyClass="tight">
+          <Table compact columns={[
+            { key: "sku", label: "SKU", render: (row) => <span className="mono">{row.sku}</span> },
+            { key: "item", label: "Producto" },
+            { key: "sale_price", label: "Precio final", align: "right", render: (row) => money(row.sale_price) },
+            { key: "unitNet", label: "Sin IVA", align: "right", render: (row) => money(row.unitNet) },
+            { key: "last_cost", label: "Costo proveedor", align: "right", render: (row) => money(row.last_cost) },
+            { key: "average_cost", label: "Costo promedio", align: "right", render: (row) => money(row.average_cost) },
+            { key: "units_sold", label: "Vendidas", align: "right" },
+            { key: "profit", label: "Utilidad", align: "right", render: (row) => money(row.profit) },
+            { key: "marginPct", label: "Margen", align: "right", render: (row) => `${Number(row.marginPct || 0).toFixed(1)}%` },
+          ]} rows={margins.byItem || []} empty="Todavía no hay productos con ventas" />
+        </Panel>
+
+        <Panel title="Utilidad por pedido" subtitle="Cada venta con su costo y su margen" bodyClass="tight">
+          <Table compact columns={[
+            { key: "number", label: "Pedido", render: (row) => <span className="mono">{row.number}</span> },
+            { key: "customer", label: "Cliente" },
+            { key: "created_at", label: "Fecha", render: (row) => dateLabel(row.created_at) },
+            { key: "gross", label: "Cobrado", align: "right", render: (row) => money(row.gross) },
+            { key: "net", label: "Sin IVA", align: "right", render: (row) => money(row.net) },
+            { key: "cogs", label: "Costo", align: "right", render: (row) => money(row.cogs) },
+            { key: "profit", label: "Utilidad", align: "right", render: (row) => money(row.profit) },
+            { key: "marginPct", label: "Margen", align: "right", render: (row) => `${Number(row.marginPct || 0).toFixed(1)}%` },
+          ]} rows={margins.byOrder || []} empty="Todavía no hay pedidos" />
+        </Panel>
+      </>}
+
       {/* ── Seguridad ───────────────────────────────────────────────────── */}
       {tab === "seguridad" && <Panel title="Seguridad de tu cuenta" subtitle="Contraseña y verificación en dos pasos">
         <div className="kv">
@@ -1212,7 +1274,7 @@ export default function BusinessPanel() {
         <Panel title="Empresa activa" subtitle="Las escrituras siempre quedan dentro del tenant seleccionado">
           <div className="callout">
             {tenant.id === "t17_sandbox"
-              ? "Estás en Samjuro Sandbox. Las facturas, pagos e inventario que registres aquí no afectan los datos reales."
+              ? "Estás en Samjuro Piloto. Las facturas, pagos e inventario que registres aquí no afectan los datos reales de Samjuro."
               : "Estás en el negocio real. Evita registrar operaciones hasta terminar la validación."}
           </div>
           {(data.tenants || []).length > 1 && (
