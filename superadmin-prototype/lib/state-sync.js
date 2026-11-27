@@ -529,11 +529,17 @@ export function buildSyncQueries(tx, state = {}) {
     `);
 
     // Si se cambia o se quita el correo de acceso de un negocio, el propietario
-    // anterior deja de tener acceso al panel.
+    // anterior deja de tener acceso al panel. El sandbox de pruebas NO vive en
+    // app_state: se crea y se siembra aparte, así que se excluye de esta baja.
     queries.push(tx`
       update public.tenant_members tm
       set active = false
       where tm.role = 'owner'
+        and not exists (
+          select 1
+          from public.tenants t
+          where t.id = tm.tenant_id and t.source_key = 't17_sandbox'
+        )
         and not exists (
           select 1
           from jsonb_to_recordset(${json(ownerRows)}::jsonb) as x(tenant_id text, email text)
