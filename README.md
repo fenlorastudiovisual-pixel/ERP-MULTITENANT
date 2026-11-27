@@ -50,20 +50,24 @@ El prototipo funciona sin base de datos (datos en `localStorage`). Para conectar
 
 `.env.local` está excluido en `.gitignore`: la connection string **nunca** debe subirse a GitHub.
 
-## ERP operativo (Fase 2)
+## ERP operativo (Fase 3)
 
 El panel `/negocio` ya trabaja contra Neon con un solo modelo de datos y un solo libro contable por tenant. Samjuro (`t16`) es **solo lectura**: todas las pruebas y escrituras ocurren en `t17_sandbox`.
 
 ```bash
 cd superadmin-prototype
-npm run db:erp-core   # migración aditiva: 48 tablas con RLS forzado
-npm run db:sandbox    # clona t16 en t17_sandbox y verifica los conteos de t16
+npm run db:erp-core       # migración aditiva: 48 tablas con RLS forzado
+npm run db:erp-inventory  # inventario y compras: 56 tablas con RLS forzado
+npm run db:sandbox        # clona t16 en t17_sandbox y verifica los conteos de t16
+npm run db:verify-phase3  # transferencia, ajuste, conteo, OC y recepción
 npm run build
-npm run dev           # http://localhost:8790
+npm run dev               # http://localhost:8790
 ```
 
 - Las sesiones nuevas entran por defecto al sandbox; el panel muestra «Samjuro Sandbox» en la pestaña **Detalle**.
 - **Finanzas** emite facturas desde pedidos confirmados/entregados, registra pagos y consulta cartera y asientos.
+- **Inventario** gestiona almacenes, transferencias, ajustes con motivo, conteos físicos y valoración promedio/FIFO en una sola vista.
+- **Compras** crea y aprueba pedidos a proveedores (partners), registra recepciones y genera entrada de stock más asiento balanceado `1510/1355/2405`.
 - `public.invoices` sigue siendo la facturación de Fenlora al tenant; las facturas del negocio están en `public.invoices_ops`.
 - DIAN queda preparada (numeración, UUID/QR, eventos) pero sin envío real hasta tener resolución y certificado.
 - La sección «Demos» permanece vacía: sin botones ni enlaces de prueba.

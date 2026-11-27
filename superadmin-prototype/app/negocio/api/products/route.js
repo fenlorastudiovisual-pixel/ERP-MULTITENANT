@@ -92,12 +92,45 @@ export async function POST(request) {
   const tenantId = ctx.identity.tenant_id;
   try {
     const rows = await runAsTenant(tenantId, (tx) => tx`
-      insert into public.products
-        (tenant_id, sku, name, description, category, price, cost, stock, min_stock, unit)
-      values
-        (${tenantId}::uuid, ${sku}, ${name}, ${description}, ${category},
-         ${price}, ${cost}, ${stock}::int, ${minStock}::int, ${unit})
-      returning id::text, sku, name, category, price::float, stock, min_stock, active
+      with p as (
+        insert into public.products
+          (tenant_id, sku, name, description, category, price, cost, stock, min_stock, unit)
+        values
+          (${tenantId}::uuid, ${sku}, ${name}, ${description}, ${category},
+           ${price}, ${cost}, ${stock}::int, ${minStock}::int, ${unit})
+        returning *
+      ),
+      item as (
+        insert into public.items
+          (id, tenant_id, sku, name, description, category, uom, sale_price, cost_price, tax_rate)
+        select md5(p.id::text || ':item:' || ${tenantId}::text)::uuid, ${tenantId}::uuid,
+               p.sku, p.name, p.description, p.category, p.unit, p.price, p.cost, 0.19
+        from p
+        returning id, tenant_id
+      ),
+      balances as (
+        insert into public.stock_balances
+          (tenant_id, warehouse_id, item_id, quantity, reserved, average_cost, last_cost)
+        select ${tenantId}::uuid, w.id, item.id,
+               case when w.code = 'PRINCIPAL' then p.stock else 0 end, 0, p.cost, p.cost
+        from item cross join p
+        cross join public.warehouses w
+        where w.tenant_id = ${tenantId}::uuid
+        on conflict (tenant_id, warehouse_id, item_id) do nothing
+        returning item_id
+      ),
+      layers as (
+        insert into public.inventory_cost_layers
+          (tenant_id, item_id, warehouse_id, quantity, remaining_qty, unit_cost)
+        select ${tenantId}::uuid, item.id, md5('principal:' || ${tenantId}::text)::uuid,
+               p.stock, p.stock, p.cost
+        from item cross join p
+        where p.stock > 0
+        returning id
+      )
+      select p.id::text, p.sku, p.name, p.category, p.price::float, p.stock,
+             p.min_stock, p.active
+      from p
     `, ctx.role, ctx.identity.user_id);
     return NextResponse.json({ product: rows[0] }, { status: 201 });
   } catch (error) {
@@ -136,11 +169,97 @@ export async function PATCH(request) {
           set stock = stock + ${delta}::int, updated_at = now()
           where tenant_id = ${tenantId}::uuid and id = ${id}::uuid
             and stock + ${delta}::int >= 0
+          returning id, cost
+        ),
+        item as (
+          select id, cost_price from public.items
+          where tenant_id = ${tenantId}::uuid
+            and id = md5(${id}::text || ':item:' || ${tenantId}::text)::uuid
+        ),
+        guard_item as (
+          select case when exists (select 1 from item) then 1 else 1 / 0 end as ok
+        ),
+        seq as (
+          insert into public.sequences (tenant_id, doc_type, prefix, period, next_value)
+          values (${tenantId}::uuid, 'inventory_movement', 'IM', ${String(new Date().getUTCFullYear())}, 2)
+          on conflict (tenant_id, doc_type, prefix, period)
+          do update set next_value = public.sequences.next_value + 1, updated_at = now()
+          returning next_value - 1 as num
+        ),
+        sb as (
+          update public.stock_balances sb
+          set quantity = sb.quantity + ${delta},
+              average_cost = case
+                when ${delta} > 0 and sb.quantity + ${delta} > 0
+                then round((sb.quantity * sb.average_cost + ${delta} * item.cost_price)
+                           / (sb.quantity + ${delta}), 2)
+                else sb.average_cost end,
+              last_cost = case when ${delta} > 0 then item.cost_price else sb.last_cost end,
+              updated_at = now()
+          from item
+          where sb.tenant_id = ${tenantId}::uuid
+            and sb.warehouse_id = md5('principal:' || ${tenantId}::text)::uuid
+            and sb.item_id = item.id
+          returning sb.quantity, sb.average_cost
+        ),
+        inv_mov as (
+          insert into public.inventory_movements
+            (id, tenant_id, number, movement_type, item_id, to_warehouse_id, quantity,
+             unit_cost, total_cost, balance_after, reason, reference_type, created_by)
+          select gen_random_uuid(), ${tenantId}::uuid,
+                 'IM-' || lpad(seq.num::text, 6, '0'), 'adjustment', item.id,
+                 md5('principal:' || ${tenantId}::text)::uuid,
+                 abs(${delta}), item.cost_price, abs(${delta} * item.cost_price),
+                 sb.quantity, ${reason}, 'adjustment', ${ctx.identity.user_id || null}::uuid
+          from seq cross join item cross join sb
           returning id
+        ),
+        layer_in as (
+          insert into public.inventory_cost_layers
+            (tenant_id, item_id, warehouse_id, movement_id, quantity, remaining_qty, unit_cost)
+          select ${tenantId}::uuid, item.id, md5('principal:' || ${tenantId}::text)::uuid,
+                 (select id from inv_mov), ${delta}, ${delta}, item.cost_price
+          from item where ${delta} > 0
+          returning id
+        ),
+        layers_src as (
+          select id, remaining_qty, received_at, created_at
+          from public.inventory_cost_layers
+          where ${delta} < 0 and tenant_id = ${tenantId}::uuid
+            and warehouse_id = md5('principal:' || ${tenantId}::text)::uuid
+            and item_id = (select id from item) and remaining_qty > 0
+          for update
+        ),
+        ranked as (
+          select id, remaining_qty, received_at,
+                 coalesce(sum(remaining_qty) over (
+                   order by received_at, created_at
+                   rows between unbounded preceding and 1 preceding
+                 ), 0) as prev_qty
+          from layers_src
+        ),
+        take as (
+          select id, least(remaining_qty, abs(${delta}) - prev_qty) as take_qty
+          from ranked where prev_qty < abs(${delta})
+        ),
+        consume as (
+          update public.inventory_cost_layers l
+          set remaining_qty = l.remaining_qty - t.take_qty,
+              consumed_qty = l.consumed_qty + t.take_qty, updated_at = now()
+          from take t where l.id = t.id
+          returning l.id
+        ),
+        guard_layers as (
+          select case when ${delta} > 0 or coalesce((select sum(take_qty) from take), 0) >= abs(${delta})
+                      then 1 else 1 / 0 end as ok
+        ),
+        legacy_mov as (
+          insert into public.stock_movements (tenant_id, product_id, quantity, kind, reason)
+          select ${tenantId}::uuid, id, ${delta}::int, 'adjustment', ${reason}
+          from moved cross join guard_item cross join guard_layers
+          returning product_id::text as id, quantity, kind, reason
         )
-        insert into public.stock_movements (tenant_id, product_id, quantity, kind, reason)
-        select ${tenantId}::uuid, id, ${delta}::int, 'adjustment', ${reason} from moved
-        returning product_id::text as id, quantity, kind, reason
+        select id, quantity, kind, reason from legacy_mov
       `, ctx.role, ctx.identity.user_id);
       if (!rows.length) return NextResponse.json({ error: "Producto no encontrado o stock insuficiente" }, { status: 400 });
       return NextResponse.json({ movement: rows[0] });

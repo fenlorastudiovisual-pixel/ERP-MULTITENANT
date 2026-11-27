@@ -255,7 +255,7 @@ npm run preview
 - **Panel de control** con KPIs globales, ingresos, módulos más usados, actividad y alertas.
 - **Tenants**: filtros, alta asistida, detalle con pestañas, clonar, suspender y cambiar modo de aislamiento.
 - **Planes y funciones**: editor visual de módulos (incluido / add-on / no disponible), límites, feature flags, precio y simulador.
-- **ERP operativo** (`/negocio`): resumen con ventas y estado de pedidos, catálogo de **1.240 productos**, **480 clientes**, **620 pedidos** y **2.168 líneas** de Samjuro en Neon. Permite crear productos y clientes, armar pedidos desde el catálogo (precio tomado de la BD), descontar stock con movimientos, ajustar inventario, cambiar estados y activar MFA. La pestaña **Finanzas** emite facturas operativas desde pedidos confirmados/entregados, registra pagos, consulta cartera por antigüedad y muestra el libro contable. Cada consulta usa `runAsTenant` con RLS; la identidad y el tenant salen de la sesión firmada, nunca de la URL.
+- **ERP operativo** (`/negocio`): resumen con ventas y estado de pedidos, catálogo de **1.240 productos**, **480 clientes**, **620 pedidos** y **2.168 líneas** de Samjuro en Neon. Permite crear productos y clientes, armar pedidos desde el catálogo (precio tomado de la BD), descontar stock con movimientos, ajustar inventario, cambiar estados y activar MFA. La pestaña **Finanzas** emite facturas operativas desde pedidos confirmados/entregados, registra pagos, consulta cartera por antigüedad y muestra el libro contable. Las pestañas **Inventario** y **Compras** gestionan almacenes, transferencias con capas FIFO, ajustes y conteos con asiento, pedidos a proveedores, recepciones y valoración promedio/FIFO. Cada consulta usa `runAsTenant` con RLS; la identidad y el tenant salen de la sesión firmada, nunca de la URL.
 - **Demos fuera de la consola**: el centro `/demos` ya no está enlazado desde el Super Admin. No se invierte en demos: el trabajo está en los ERP operativos contra Neon.
 - **Configuración**: usuarios/roles/SSO, idiomas y traducciones, localización fiscal, white-label con vista previa en vivo, módulos y versiones.
 - **Operaciones**: seguridad y auditoría, observabilidad, cuotas y colas, soporte con SLA, integraciones, migración de datos, BI global y ajustes del sistema.
@@ -274,8 +274,10 @@ El seed es idempotente: borra solo las operaciones de `t16` y las vuelve a crear
 ## Núcleo ERP y sandbox
 
 ```bash
-npm run db:erp-core   # añade el núcleo transaccional y el módulo financiero (48 tablas con RLS)
-npm run db:sandbox    # crea t17_sandbox desde t16 y verifica que t16 no cambió
+npm run db:erp-core       # añade el núcleo transaccional y el módulo financiero (48 tablas con RLS)
+npm run db:erp-inventory  # añade inventario multi-almacén y compras (56 tablas con RLS)
+npm run db:sandbox        # crea t17_sandbox desde t16 y verifica que t16 no cambió
+npm run db:verify-phase3  # prueba transferencia, ajuste, conteo, OC y recepción en el sandbox
 ```
 
 Samjuro (`t16`) queda en **solo lectura**: las sesiones nuevas del panel entran en `t17_sandbox`. Las facturas del negocio viven en `public.invoices_ops`; `public.invoices` sigue siendo la facturación de Fenlora al tenant. DIAN está preparada (numeración, UUID/QR y eventos) pero no se envía nada hasta tener resolución y certificado. La sección «Demos» continúa vacía.
@@ -292,6 +294,8 @@ lib/demo-data.js             Generador determinista de datos operativos por nich
 lib/db.js                    Cliente Neon + contexto RLS por transacción
 lib/erp/permissions.js       RBAC granular y auditoría del ERP
 lib/erp/finance.js           Facturación, cartera y asientos balanceados
+lib/erp/inventory.js         Almacenes, transferencias, ajustes, conteos, FIFO y asientos
+lib/erp/purchases.js         Pedidos a proveedores, aprobación, recepciones y asientos
 app/demos/page.js            Centro de demos del Super Admin
 app/demo/[token]/page.js     Panel público interactivo de la demo
 components/ui.jsx            Componentes reutilizables
@@ -301,7 +305,10 @@ components/sections-ops.jsx  Seguridad, Operaciones, Soporte, Integraciones, Dat
 database/schema.sql          Esquema Postgres con RLS, planes, módulos, flags, demos y auditoría
 database/setup.mjs           Aplica schema.sql a Neon
 database/erp-core.sql        Migración aditiva del núcleo ERP
+database/erp-inventory.sql   Migración aditiva de inventario, compras y valoración
+database/migrate-erp-inventory.mjs Aplica erp-inventory.sql a Neon
 database/seed-sandbox.mjs    Clona t16 en t17_sandbox sin escribir en t16
+database/verify-phase3.mjs   Prueba real de inventario y compras; verifica t16 intacto
 database/check.mjs           Verifica conexión y contexto RLS
 database/build-worker.mjs    Compila el Worker sin hornear secretos
 open-next.config.ts          Configuración OpenNext para Cloudflare

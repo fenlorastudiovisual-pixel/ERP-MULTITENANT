@@ -1,7 +1,7 @@
 # Plan ultra detallado de los ERP — ERP Multitenant / Fenlora Visual Studio
 
-**Estado:** modelo aprobado por el usuario («hazla como lo hacen los grandes»). Fases 0–2 implementadas y verificadas en Neon; siguiente: Fase 3 (inventario y compras). Samjuro (`t16`) sigue en solo lectura.
-**Fecha:** 2026-11-26.
+**Estado:** modelo aprobado por el usuario («hazla como lo hacen los grandes»). Fases 0–3 implementadas, verificadas en Neon y desplegadas; siguiente: Fase 4 (CRM/WhatsApp y BI). Samjuro (`t16`) sigue en solo lectura.
+**Fecha:** 2026-11-27.
 **Alcance:** plataforma `ERP-MULTITENANT` (proyecto independiente), tenant real `t16` = Samjuro usado **solo como referencia de lectura**, tenant sandbox `t17_sandbox` para pruebas de escritura, producción `https://erp.fenloravisual.com`.
 
 ---
@@ -551,7 +551,7 @@ Las tablas actuales se conservan como capa de compatibilidad hasta que la nueva 
 | **0. Gobernanza ✅** | Plan aprobado + sección Demos vacía + README | — | Build OK; consola con 17 secciones, Demos sin acciones; arquitectura aprobada |
 | **1. Núcleo maestro y sequences ✅** | `t17_sandbox` creado por copia; maestros canónicos y numeración atómica sin borrar originales | `items`, `partners`, `sales_orders`, `sequences`, `role_permissions`, `erp_module_settings` | 1.240/480/620/2.168/1.980 filas copiadas; 48 tablas con RLS forzado; `t16` sin cambios |
 | **2. Finanzas mínimas ✅** | Factura operativa, cartera, pagos, contabilidad de asientos y pestaña «Finanzas» | `invoices_ops`, `invoice_lines`, `receivables`, `payments_in`, `journal_entries`, `journal_lines`, `accounts`, `periods` | Pedido `PED-2026-00146` → `FV-000001` → `PA-000001` → `AS-000001/000002` balanceados; pago sin aplicar `PA-000002` → `AS-000003` balanceado; cartera en 0; `t16` con 0 documentos financieros |
-| **3. Inventario y compras (siguiente)** | Multi-almacén, valoración, conteos, OC, recepciones, proveedores | `warehouses`, `stock_balances`, `stock_movements_v2`, `purchase_orders`, `purchase_receipts`, `payables` | Transferencia entre almacenes; ajuste con motivo; recepción que genera entrada + asiento |
+| **3. Inventario y compras ✅** | Multi-almacén, valoración promedio/FIFO, conteos, OC, recepciones y proveedores; pestañas «Inventario» y «Compras» | `inventory_movements`, `inventory_cost_layers`, `inventory_counts`, `inventory_count_lines`, `purchase_orders`, `purchase_order_lines`, `purchase_receipts`, `purchase_receipt_lines`, `inventory_valuation` | `IM-000001` transferencia (5 und al almacén secundario), `IM-000002` ajuste con `AS-000001`, `IC-000001` con diferencia `-60.000` y `AS-000002`, `OC-000001` → `RC-000001` con `AS-000003`; 0 asientos desbalanceados y 0 líneas inválidas; `t16` sin cambios |
 | **4. CRM/WhatsApp y BI** | Leads, oportunidades, `wa.me`, tableros por rol | `leads_ops`, `opportunities`, `whatsapp_links`, `dashboard_widgets`, `report_definitions` | Enlace `wa.me` con datos reales; KPI con drill-down al documento |
 | **5. Seguridad avanzada** | Permisos granulares completos, auditoría enriquecida, MFA owner, impersonación | `role_permissions`, `audit_log` extendido, `tenant_mfa` | Matriz RBAC aplicada en API; intento de acción prohibida devuelve 403 y deja auditoría |
 | **6. Perfil Restaurante** | Mesas, comandas, recetas, POS, propinas | Tablas del §7 | Pedido de mesa → comanda → factura → asiento; food cost calculado |
@@ -602,5 +602,7 @@ Las tablas actuales se conservan como capa de compatibilidad hasta que la nueva 
 - Sandbox `t17_sandbox` (`76fa9913-4ee3-40c4-bd43-ff300ad78d61`) clonado desde `t16` (`03dac6f5-e99a-5fce-97f7-d15b9964c09d`) con `npm run db:sandbox`; conteos 1.240/480/620/2.168/1.980 intactos en Samjuro.
 - Núcleo financiero: `lib/erp/finance.js`, `lib/erp/permissions.js`, APIs `/negocio/api/finance/*`, pestaña «Finanzas» y selector de empresa con sesión firmada.
 - Validación real en Neon: factura `FV-000001`, cobro `PA-000001`, anticipo `PA-000002` y asientos `AS-000001` a `AS-000003` con débito = crédito en cabecera y líneas. `t16` sigue con 0 documentos financieros.
-- `npm run build` OK; commit `72379db` pusheado.
-- Deploy Cloudflare completado: Worker `erp-multitenant`, versión `f20dc5de-ba50-42ac-a41e-139f36ce345b`; `/api/health` responde 200 en `https://erp-multitenant.fenlorastudiovisual.workers.dev`.
+- Migración aditiva `database/erp-inventory.sql` aplicada (`npm run db:erp-inventory`): 56 sentencias, 56 tablas con RLS forzado. Incluye `public.erp_assert` para validaciones que revierten la transacción (sin guards `1 / 0`).
+- Inventario y compras: `lib/erp/inventory.js`, `lib/erp/purchases.js`, APIs `/negocio/api/inventory/*` y `/negocio/api/purchases/*`, pestañas «Inventario» y «Compras»; alta y ajuste de productos legacy sincronizados con capas y movimientos ERP.
+- Verificación Fase 3 (`npm run db:sandbox && npm run db:verify-phase3`): `IM-000001`, `IM-000002`/`AS-000001`, `IC-000001`/`AS-000002`, `OC-000001` → `RC-000001`/`AS-000003`; `{movements:5, counts:1, orders:1, receipts:1, journal_entries:3, unbalanced:0, bad_lines:0, secondary_qty:5}`; Samjuro `1240/480/620/2168/1980` con 0 documentos financieros y 0 asientos.
+- `npm run build` OK y `npm run deploy` completado: Worker `erp-multitenant`, versión `469d0b5d-9f5b-43f5-b534-fb70df6bf99c`; `/api/health` responde 200 en `https://erp-multitenant.fenlorastudiovisual.workers.dev`. La versión anterior de Fase 2 fue `f20dc5de-ba50-42ac-a41e-139f36ce345b`.

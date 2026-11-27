@@ -11,6 +11,8 @@ const TABS = [
   { id: "clientes", label: "Clientes" },
   { id: "pedidos", label: "Pedidos" },
   { id: "facturacion", label: "Finanzas" },
+  { id: "inventario", label: "Inventario" },
+  { id: "compras", label: "Compras" },
   { id: "seguridad", label: "Seguridad" },
   { id: "detalle", label: "Detalle" },
 ];
@@ -48,6 +50,12 @@ const FINANCE_TONE = {
   open: "amber", overdue: "rose", posted: "green", reversed: "slate",
 };
 const financeTag = (status) => <Tag tone={FINANCE_TONE[status] || "slate"} dot>{status}</Tag>;
+const ERP_TONE = {
+  draft: "slate", approved: "indigo", partially_received: "amber", received: "green",
+  cancelled: "slate", posted: "green", transfer_in: "green", transfer_out: "amber",
+  adjustment: "indigo", purchase_in: "blue", count: "rose", open: "amber",
+};
+const erpTag = (status) => <Tag tone={ERP_TONE[status] || "slate"} dot>{String(status || "").replaceAll("_", " ")}</Tag>;
 
 async function jsonRequest(url, options = {}) {
   const res = await fetch(url, { credentials: "include", ...options });
@@ -98,6 +106,26 @@ export default function BusinessPanel() {
   const [financeForm, setFinanceForm] = useState({
     orderId: "", partnerId: "", receivableId: "", amount: "", method: "transfer", reference: "",
   });
+
+  // Inventario multi-almacén y compras del ERP
+  const [inventory, setInventory] = useState({
+    warehouses: [], valuation: [], movements: [], counts: [], kpis: null, items: [],
+  });
+  const [inventoryForm, setInventoryForm] = useState({
+    itemId: "", fromId: "", toId: "", quantity: "", reason: "",
+    adjustItemId: "", adjustWarehouseId: "", adjustQuantity: "", adjustReason: "",
+  });
+  const [purchases, setPurchases] = useState({
+    suppliers: [], orders: [], receipts: [], orderLines: [], kpis: null,
+  });
+  const [purchaseForm, setPurchaseForm] = useState({
+    supplierId: "", warehouseId: "", itemId: "", quantity: "", unitCost: "",
+    expectedDate: "", notes: "",
+  });
+  const [purchaseLines, setPurchaseLines] = useState([]);
+  const [countModal, setCountModal] = useState(false);
+  const [countWarehouse, setCountWarehouse] = useState("");
+  const [countRows, setCountRows] = useState([]);
 
   // Filtros y paginación
   const [productQ, setProductQ] = useState("");
@@ -176,6 +204,29 @@ export default function BusinessPanel() {
     setError("");
   }, []);
 
+  const loadInventory = useCallback(async () => {
+    const { ok, json } = await jsonRequest("/negocio/api/inventory/overview");
+    if (!ok) return setError(json.error || "No se pudo cargar el inventario");
+    const items = await jsonRequest("/negocio/api/inventory/items");
+    setInventory((prev) => ({
+      ...prev,
+      warehouses: json.warehouses || [],
+      valuation: json.valuation || [],
+      movements: json.movements || [],
+      counts: json.counts || [],
+      kpis: json.kpis,
+      items: items.ok ? items.json.items || [] : prev.items,
+    }));
+    setError("");
+  }, []);
+
+  const loadPurchases = useCallback(async () => {
+    const { ok, json } = await jsonRequest("/negocio/api/purchases/overview");
+    if (!ok) return setError(json.error || "No se pudo cargar compras");
+    setPurchases(json);
+    setError("");
+  }, []);
+
   async function load() {
     const { ok, status, json } = await jsonRequest("/negocio/api/me");
     if (ok) {
@@ -198,10 +249,12 @@ export default function BusinessPanel() {
     if (view !== "panel") return;
     if (tab === "resumen") loadOverview();
     if (tab === "facturacion") loadFinance();
+    if (tab === "inventario") loadInventory();
+    if (tab === "compras") { loadPurchases(); loadInventory(); }
     if (tab === "productos") loadProducts();
     if (tab === "clientes") loadCustomers();
     if (tab === "pedidos") loadOrders();
-  }, [view, tab, loadOverview, loadFinance, loadProducts, loadCustomers, loadOrders]);
+  }, [view, tab, loadOverview, loadFinance, loadInventory, loadPurchases, loadProducts, loadCustomers, loadOrders]);
 
   useEffect(() => {
     if (!notice) return;
@@ -432,6 +485,108 @@ export default function BusinessPanel() {
       setFinanceForm((prev) => ({ ...prev, receivableId: "", partnerId: "", amount: "", reference: "" }));
       loadFinance();
       setNotice(`Pago ${json.payment.number} registrado · asiento ${json.payment.journal_number}`);
+    });
+  }
+
+  async function transferStock(event) {
+    event.preventDefault();
+    await mutate("/negocio/api/inventory/transfer", "POST", {
+      itemId: inventoryForm.itemId,
+      fromWarehouseId: inventoryForm.fromId,
+      toWarehouseId: inventoryForm.toId,
+      quantity: Number(inventoryForm.quantity),
+      reason: inventoryForm.reason,
+    }, (json) => {
+      setInventoryForm((prev) => ({ ...prev, quantity: "", reason: "" }));
+      loadInventory();
+      setNotice(`Transferencia ${json.transfer.number} registrada`);
+    });
+  }
+
+  async function adjustInventory(event) {
+    event.preventDefault();
+    await mutate("/negocio/api/inventory/adjust", "POST", {
+      warehouseId: inventoryForm.adjustWarehouseId,
+      itemId: inventoryForm.adjustItemId,
+      quantity: Number(inventoryForm.adjustQuantity),
+      reason: inventoryForm.adjustReason,
+    }, (json) => {
+      setInventoryForm((prev) => ({ ...prev, adjustQuantity: "", adjustReason: "" }));
+      loadInventory();
+      setNotice(`Ajuste ${json.adjustment.number} registrado${json.adjustment.journal_number ? ` · ${json.adjustment.journal_number}` : ""}`);
+    });
+  }
+
+  function openCountModal() {
+    const warehouse = inventoryForm.adjustWarehouseId || inventory.warehouses[0]?.id || "";
+    setCountWarehouse(warehouse);
+    setCountRows((inventory.items || []).slice(0, 40).map((item) => ({
+      itemId: item.id, sku: item.sku, name: item.name, expected: item.stock, counted: String(item.stock || 0),
+    })));
+    setCountModal(true);
+  }
+
+  async function submitCount(event) {
+    event.preventDefault();
+    const counts = countRows
+      .filter((row) => Number(row.counted) !== Number(row.expected))
+      .map((row) => ({ itemId: row.itemId, countedQty: Number(row.counted) }));
+    if (!counts.length) return setError("No hay diferencias entre esperado y contado");
+    await mutate("/negocio/api/inventory/count", "POST", {
+      warehouseId: countWarehouse, counts, reason: "Conteo físico de inventario",
+    }, (json) => {
+      setCountModal(false);
+      loadInventory();
+      setNotice(`Conteo ${json.count.number} aplicado${json.count.journal_number ? ` · ${json.count.journal_number}` : ""}`);
+    });
+  }
+
+  function addPurchaseLine() {
+    const item = (inventory.items || []).find((row) => row.id === purchaseForm.itemId);
+    const quantity = Number(purchaseForm.quantity);
+    const unitCost = Number(purchaseForm.unitCost);
+    if (!item || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitCost) || unitCost < 0) {
+      return setError("Selecciona un ítem y escribe cantidad y costo válidos");
+    }
+    setPurchaseLines((prev) => [
+      ...prev,
+      { key: `${item.id}-${Date.now()}`, itemId: item.id, sku: item.sku, name: item.name, quantity, unitCost, taxRate: 0.19 },
+    ]);
+    setPurchaseForm((prev) => ({ ...prev, itemId: "", quantity: "", unitCost: "" }));
+    setError("");
+  }
+
+  async function submitPurchase(event) {
+    event.preventDefault();
+    if (!purchaseForm.supplierId || !purchaseForm.warehouseId || !purchaseLines.length) {
+      return setError("Proveedor, almacén y al menos una línea son obligatorios");
+    }
+    await mutate("/negocio/api/purchases/orders", "POST", {
+      supplierId: purchaseForm.supplierId,
+      warehouseId: purchaseForm.warehouseId,
+      expectedDate: purchaseForm.expectedDate || null,
+      notes: purchaseForm.notes,
+      lines: purchaseLines.map(({ itemId, quantity, unitCost, taxRate }) => ({ itemId, quantity, unitCost, taxRate })),
+    }, (json) => {
+      setPurchaseLines([]);
+      setPurchaseForm((prev) => ({ ...prev, expectedDate: "", notes: "" }));
+      loadPurchases();
+      setNotice(`Pedido ${json.order.number} creado por ${money(json.order.total)}`);
+    });
+  }
+
+  async function approveOrder(row) {
+    await mutate("/negocio/api/purchases/orders", "POST", { action: "approve", orderId: row.id }, () => {
+      loadPurchases();
+      setNotice(`Pedido ${row.number} aprobado`);
+    });
+  }
+
+  async function receiveOrder(row) {
+    await mutate("/negocio/api/purchases/receive", "POST", { orderId: row.id }, (json) => {
+      loadPurchases();
+      loadInventory();
+      setNotice(`Recepción ${json.receipt.number} · asiento ${json.receipt.journal_number}`);
     });
   }
 
@@ -793,6 +948,225 @@ export default function BusinessPanel() {
         </Panel>
       </>}
 
+      {/* ── Inventario ──────────────────────────────────────────────────── */}
+      {tab === "inventario" && <>
+        <div className="stat-grid" style={{ gridTemplateColumns: "repeat(4,1fr)" }}>
+          <Stat label="Unidades en stock" value={Number(inventory.kpis?.units || 0).toLocaleString("es-CO")} icon="▣" tone="indigo" />
+          <Stat label="Valor promedio" value={compact(inventory.kpis?.average_value)} icon="◎" tone="green" hint="Costo promedio ponderado" />
+          <Stat label="Valor FIFO" value={compact(inventory.kpis?.fifo_value)} icon="▤" tone="blue" hint="Capas de entrada pendientes" />
+          <Stat label="Ubicaciones" value={`${inventory.kpis?.stocked_items || 0}/${(inventory.kpis?.stocked_items || 0) + (inventory.kpis?.empty_locations || 0)}`} icon="⌂" tone="amber" hint="Ítems con existencias / total" />
+        </div>
+
+        <div className="chart-grid">
+          <Panel title="Transferir entre almacenes" subtitle="Consume capas FIFO y ajusta costo promedio">
+            <form onSubmit={transferStock}>
+              <Field label="Ítem">
+                <select value={inventoryForm.itemId} onChange={(e) => setInventoryForm((prev) => ({ ...prev, itemId: e.target.value }))} required>
+                  <option value="">Selecciona un ítem…</option>
+                  {(inventory.items || []).map((row) => (
+                    <option key={row.id} value={row.id}>{row.sku} · {row.name} · {row.stock} und</option>
+                  ))}
+                </select>
+              </Field>
+              <div className="two-col">
+                <Field label="Origen">
+                  <select value={inventoryForm.fromId} onChange={(e) => setInventoryForm((prev) => ({ ...prev, fromId: e.target.value }))} required>
+                    <option value="">Almacén…</option>
+                    {(inventory.warehouses || []).map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
+                  </select>
+                </Field>
+                <Field label="Destino">
+                  <select value={inventoryForm.toId} onChange={(e) => setInventoryForm((prev) => ({ ...prev, toId: e.target.value }))} required>
+                    <option value="">Almacén…</option>
+                    {(inventory.warehouses || []).map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
+                  </select>
+                </Field>
+              </div>
+              <div className="two-col">
+                <Field label="Cantidad">
+                  <input type="number" min="0.001" step="0.001" required value={inventoryForm.quantity}
+                    onChange={(e) => setInventoryForm((prev) => ({ ...prev, quantity: e.target.value }))} />
+                </Field>
+                <Field label="Motivo">
+                  <input required value={inventoryForm.reason} placeholder="Traslado entre tiendas…"
+                    onChange={(e) => setInventoryForm((prev) => ({ ...prev, reason: e.target.value }))} />
+                </Field>
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+                <Btn tone="primary" disabled={busy}>Transferir</Btn>
+              </div>
+            </form>
+          </Panel>
+
+          <Panel title="Ajustar con motivo" subtitle="Pérdidas y sobrantes generan asiento balanceado">
+            <form onSubmit={adjustInventory}>
+              <div className="two-col">
+                <Field label="Ítem">
+                  <select value={inventoryForm.adjustItemId} onChange={(e) => setInventoryForm((prev) => ({ ...prev, adjustItemId: e.target.value }))} required>
+                    <option value="">Selecciona un ítem…</option>
+                    {(inventory.items || []).map((row) => (
+                      <option key={row.id} value={row.id}>{row.sku} · {row.name}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Almacén">
+                  <select value={inventoryForm.adjustWarehouseId} onChange={(e) => setInventoryForm((prev) => ({ ...prev, adjustWarehouseId: e.target.value }))} required>
+                    <option value="">Almacén…</option>
+                    {(inventory.warehouses || []).map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
+                  </select>
+                </Field>
+              </div>
+              <div className="two-col">
+                <Field label="Cantidad" hint="Negativo para pérdida, positivo para sobrante">
+                  <input type="number" step="0.001" required value={inventoryForm.adjustQuantity}
+                    onChange={(e) => setInventoryForm((prev) => ({ ...prev, adjustQuantity: e.target.value }))} />
+                </Field>
+                <Field label="Motivo">
+                  <input required value={inventoryForm.adjustReason} placeholder="Merma, daño, sobrante…"
+                    onChange={(e) => setInventoryForm((prev) => ({ ...prev, adjustReason: e.target.value }))} />
+                </Field>
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+                <Btn tone="primary" disabled={busy}>Aplicar ajuste</Btn>
+              </div>
+            </form>
+          </Panel>
+        </div>
+
+        <div className="chart-grid">
+          <Panel title="Conteos físicos" subtitle="Diferencias aplicadas y contabilizadas" bodyClass="tight" actions={<Btn onClick={openCountModal} disabled={busy || !inventory.items?.length}>Nuevo conteo</Btn>}>
+            <Table compact columns={[
+              { key: "number", label: "Conteo", render: (row) => <span className="mono">{row.number}</span> },
+              { key: "warehouse", label: "Almacén" },
+              { key: "counted_at", label: "Fecha", render: (row) => dateLabel(row.counted_at) },
+              { key: "difference_total", label: "Diferencia", align: "right", render: (row) => money(row.difference_total) },
+              { key: "journal_number", label: "Asiento", render: (row) => <span className="mono">{row.journal_number || "—"}</span> },
+            ]} rows={inventory.counts || []} empty="Sin conteos registrados" />
+          </Panel>
+          <Panel title="Valoración por almacén" subtitle="Promedio ponderado vs. capas FIFO" bodyClass="tight">
+            <Table compact columns={[
+              { key: "warehouse", label: "Almacén" },
+              { key: "sku", label: "SKU" },
+              { key: "name", label: "Ítem" },
+              { key: "quantity", label: "Und", align: "right" },
+              { key: "average_value", label: "Promedio", align: "right", render: (row) => money(row.average_value) },
+              { key: "fifo_value", label: "FIFO", align: "right", render: (row) => money(row.fifo_value) },
+            ]} rows={inventory.valuation || []} empty="No hay existencias registradas" />
+          </Panel>
+        </div>
+
+        <Panel title="Movimientos de inventario" subtitle="Transferencias, ajustes, conteos y recepciones" bodyClass="tight">
+          <Table compact columns={[
+            { key: "number", label: "Número", render: (row) => <span className="mono">{row.number}</span> },
+            { key: "movement_type", label: "Tipo", render: (row) => erpTag(row.movement_type) },
+            { key: "item", label: "Ítem" },
+            { key: "from_code", label: "Origen", render: (row) => row.from_code || "—" },
+            { key: "to_code", label: "Destino", render: (row) => row.to_code || "—" },
+            { key: "quantity", label: "Cant.", align: "right" },
+            { key: "reason", label: "Motivo" },
+            { key: "occurred_at", label: "Fecha", render: (row) => dateLabel(row.occurred_at) },
+          ]} rows={inventory.movements || []} empty="Aún no hay movimientos de inventario" />
+        </Panel>
+      </>}
+
+      {/* ── Compras ──────────────────────────────────────────────────────── */}
+      {tab === "compras" && <>
+        <div className="stat-grid" style={{ gridTemplateColumns: "repeat(4,1fr)" }}>
+          <Stat label="Pedidos abiertos" value={money(purchases.kpis?.open_orders)} icon="▤" tone="indigo" />
+          <Stat label="Recibido" value={money(purchases.kpis?.received)} icon="↙" tone="green" />
+          <Stat label="Por pagar" value={money(purchases.kpis?.payables)} icon="⏱" tone="amber" hint="Cuenta 2405 Proveedores" />
+          <Stat label="Borradores" value={purchases.kpis?.drafts || 0} icon="◇" tone="slate" />
+        </div>
+
+        <Panel title="Nuevo pedido de compra" subtitle="Los proveedores son partners del mismo maestro canónico">
+          <form onSubmit={submitPurchase}>
+            <div className="two-col">
+              <Field label="Proveedor">
+                <select value={purchaseForm.supplierId} onChange={(e) => setPurchaseForm((prev) => ({ ...prev, supplierId: e.target.value }))} required>
+                  <option value="">Selecciona un proveedor…</option>
+                  {(purchases.suppliers || []).map((row) => <option key={row.id} value={row.id}>{row.name} · {row.document}</option>)}
+                </select>
+              </Field>
+              <Field label="Almacén de recepción">
+                <select value={purchaseForm.warehouseId} onChange={(e) => setPurchaseForm((prev) => ({ ...prev, warehouseId: e.target.value }))} required>
+                  <option value="">Almacén…</option>
+                  {(inventory.warehouses || []).map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
+                </select>
+              </Field>
+            </div>
+            <div className="filter-row">
+              <select value={purchaseForm.itemId} onChange={(e) => setPurchaseForm((prev) => ({ ...prev, itemId: e.target.value }))}>
+                <option value="">Ítem a comprar…</option>
+                {(inventory.items || []).map((row) => <option key={row.id} value={row.id}>{row.sku} · {row.name}</option>)}
+              </select>
+              <input type="number" min="0.001" step="0.001" placeholder="Cantidad" value={purchaseForm.quantity}
+                onChange={(e) => setPurchaseForm((prev) => ({ ...prev, quantity: e.target.value }))} />
+              <input type="number" min="0" step="0.01" placeholder="Costo unitario" value={purchaseForm.unitCost}
+                onChange={(e) => setPurchaseForm((prev) => ({ ...prev, unitCost: e.target.value }))} />
+              <Btn onClick={addPurchaseLine} disabled={busy}>Agregar línea</Btn>
+            </div>
+            {purchaseLines.length > 0 && <div className="table-wrap compact" style={{ marginTop: 12 }}>
+              <table><thead><tr><th>Ítem</th><th>Cant.</th><th>Costo</th><th>Subtotal</th><th></th></tr></thead>
+                <tbody>{purchaseLines.map((line) => (
+                  <tr key={line.key}>
+                    <td>{line.sku} · {line.name}</td>
+                    <td>{line.quantity}</td>
+                    <td>{money(line.unitCost)}</td>
+                    <td>{money(line.quantity * line.unitCost)}</td>
+                    <td><button type="button" className="icon-btn" onClick={() => setPurchaseLines((prev) => prev.filter((item) => item.key !== line.key))}>✕</button></td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>}
+            <div className="two-col" style={{ marginTop: 12 }}>
+              <Field label="Fecha esperada"><input type="date" value={purchaseForm.expectedDate}
+                onChange={(e) => setPurchaseForm((prev) => ({ ...prev, expectedDate: e.target.value }))} /></Field>
+              <Field label="Notas"><input value={purchaseForm.notes}
+                onChange={(e) => setPurchaseForm((prev) => ({ ...prev, notes: e.target.value }))} placeholder="Observaciones…" /></Field>
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+              <Btn tone="primary" disabled={busy || !purchaseLines.length}>Crear pedido</Btn>
+            </div>
+          </form>
+        </Panel>
+
+        <Panel title="Pedidos de compra" subtitle="Aprueba y recibe; la recepción genera entrada y asiento" bodyClass="tight">
+          <Table compact columns={[
+            { key: "number", label: "Pedido", render: (row) => <span className="mono">{row.number}</span> },
+            { key: "supplier", label: "Proveedor" },
+            { key: "warehouse", label: "Almacén" },
+            { key: "total", label: "Total", align: "right", render: (row) => money(row.total) },
+            { key: "received_total", label: "Recibido", align: "right", render: (row) => money(row.received_total) },
+            { key: "status", label: "Estado", render: (row) => erpTag(row.status) },
+            { key: "actions", label: "", render: (row) => <div style={{ display: "flex", gap: 6 }}>
+              {row.status === "draft" && <Btn size="sm" onClick={() => approveOrder(row)} disabled={busy}>Aprobar</Btn>}
+              {["approved", "partially_received"].includes(row.status) && <Btn size="sm" tone="primary" onClick={() => receiveOrder(row)} disabled={busy}>Recibir todo</Btn>}
+            </div> },
+          ]} rows={purchases.orders || []} empty="No hay pedidos de compra" />
+        </Panel>
+
+        <div className="chart-grid">
+          <Panel title="Recepciones" subtitle="Cada recepción deja su asiento en el libro único" bodyClass="tight">
+            <Table compact columns={[
+              { key: "number", label: "Recepción", render: (row) => <span className="mono">{row.number}</span> },
+              { key: "purchase_order", label: "Pedido" },
+              { key: "supplier", label: "Proveedor" },
+              { key: "total", label: "Total", align: "right", render: (row) => money(row.total) },
+              { key: "journal_number", label: "Asiento", render: (row) => <span className="mono">{row.journal_number || "—"}</span> },
+            ]} rows={purchases.receipts || []} empty="Todavía no hay recepciones" />
+          </Panel>
+          <Panel title="Pendiente por recibir" subtitle="Líneas con saldo abierto" bodyClass="tight">
+            <Table compact columns={[
+              { key: "sku", label: "SKU" },
+              { key: "item", label: "Ítem" },
+              { key: "quantity", label: "Pedido", align: "right" },
+              { key: "received_qty", label: "Recibido", align: "right" },
+              { key: "unit_cost", label: "Costo", align: "right", render: (row) => money(row.unit_cost) },
+            ]} rows={purchases.orderLines || []} empty="Todo ha sido recibido" />
+          </Panel>
+        </div>
+      </>}
+
       {/* ── Seguridad ───────────────────────────────────────────────────── */}
       {tab === "seguridad" && <Panel title="Seguridad de tu cuenta" subtitle="Contraseña y verificación en dos pasos">
         <div className="kv">
@@ -965,6 +1339,33 @@ export default function BusinessPanel() {
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
             <Btn onClick={() => setModal(null)}>Cancelar</Btn><Btn tone="primary" disabled={busy || !cart.length}>Crear pedido</Btn>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal open={countModal} onClose={() => setCountModal(false)} title="Nuevo conteo físico"
+        subtitle="Compara el stock teórico con lo contado y aplica las diferencias" width={760}>
+        <form onSubmit={submitCount}>
+          <Field label="Almacén">
+            <select value={countWarehouse} onChange={(e) => setCountWarehouse(e.target.value)} required>
+              {(inventory.warehouses || []).map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
+            </select>
+          </Field>
+          <div className="table-wrap compact" style={{ marginTop: 12, maxHeight: 360, overflow: "auto" }}>
+            <table><thead><tr><th>Ítem</th><th>Esperado</th><th>Contado</th></tr></thead>
+              <tbody>{countRows.map((row, index) => (
+                <tr key={row.itemId}>
+                  <td>{row.sku} · {row.name}</td>
+                  <td>{row.expected}</td>
+                  <td><input type="number" min="0" step="0.001" value={row.counted}
+                    onChange={(e) => setCountRows((prev) => prev.map((item, i) => i === index ? { ...item, counted: e.target.value } : item))} /></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+            <Btn onClick={() => setCountModal(false)}>Cancelar</Btn>
+            <Btn tone="primary" disabled={busy}>Aplicar conteo</Btn>
           </div>
         </form>
       </Modal>

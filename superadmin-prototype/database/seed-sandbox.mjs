@@ -50,6 +50,8 @@ console.log(`Sandbox ${T} creado desde ${source.name} (${source.id}).`);
 const cleanups = [
   "payment_allocations", "payments_in", "receivables", "invoice_lines", "invoices_ops",
   "sales_order_lines", "sales_orders", "journal_lines", "journal_entries",
+  "purchase_receipt_lines", "purchase_receipts", "purchase_order_lines", "purchase_orders",
+  "inventory_count_lines", "inventory_counts", "inventory_cost_layers", "inventory_movements",
   "stock_balances", "warehouses", "items", "partners", "accounts", "periods",
   "sequences", "role_permissions", "erp_module_settings",
   "stock_movements", "order_items", "orders", "customers", "products",
@@ -141,18 +143,47 @@ await sql`
     cost_price = excluded.cost_price, updated_at = now()
 `;
 await sql`
-  insert into public.warehouses (id, tenant_id, code, name, active)
-  values (md5('principal:' || ${T}::text)::uuid, ${T}::uuid, 'PRINCIPAL', 'Almacén principal', true)
+  insert into public.warehouses (id, tenant_id, code, name, cost_center, active)
+  values
+    (md5('principal:' || ${T}::text)::uuid, ${T}::uuid, 'PRINCIPAL', 'Almacén principal', 'CC-01', true),
+    (md5('secundario:' || ${T}::text)::uuid, ${T}::uuid, 'SECUNDARIO', 'Almacén secundario', 'CC-02', true)
   on conflict (tenant_id, code) do nothing
 `;
 await sql`
-  insert into public.stock_balances (tenant_id, warehouse_id, item_id, quantity, reserved, average_cost)
-  select ${T}::uuid, md5('principal:' || ${T}::text)::uuid,
-         md5(p.id::text || ':item:' || ${T}::text)::uuid, p.stock, 0, p.cost
-  from public.products p where p.tenant_id = ${T}::uuid
+  insert into public.stock_balances (tenant_id, warehouse_id, item_id, quantity, reserved, average_cost, last_cost)
+  select ${T}::uuid, w.id, md5(p.id::text || ':item:' || ${T}::text)::uuid,
+         case when w.code = 'PRINCIPAL' then p.stock else 0 end, 0, p.cost, p.cost
+  from public.products p
+  cross join public.warehouses w
+  where p.tenant_id = ${T}::uuid and w.tenant_id = ${T}::uuid
   on conflict (tenant_id, warehouse_id, item_id) do update set
-    quantity = excluded.quantity, average_cost = excluded.average_cost, updated_at = now()
+    quantity = excluded.quantity, average_cost = excluded.average_cost,
+    last_cost = excluded.last_cost, updated_at = now()
 `;
+await sql`
+  insert into public.inventory_cost_layers
+    (tenant_id, item_id, warehouse_id, quantity, remaining_qty, consumed_qty, unit_cost)
+  select ${T}::uuid, md5(p.id::text || ':item:' || ${T}::text)::uuid,
+         md5('principal:' || ${T}::text)::uuid, p.stock, p.stock, 0, p.cost
+  from public.products p
+  where p.tenant_id = ${T}::uuid and p.stock > 0
+`;
+// Proveedores de PRUEBA, creados solo en el sandbox. No representan proveedores reales de Samjuro.
+await sql.query(`
+  insert into public.partners
+    (id, tenant_id, kind, document_type, document, name, trade_name, email, phone, city,
+     payment_terms_days, credit_limit, tax_regime, active)
+  values
+    ${[
+      ["TEST-SUP-01", "Proveedor de prueba 01"],
+      ["TEST-SUP-02", "Proveedor de prueba 02"],
+      ["TEST-SUP-03", "Proveedor de prueba 03"],
+    ].map(([doc, name]) =>
+      `(md5('${doc}:supplier:${T}')::uuid, '${T}'::uuid, 'supplier', 'NIT', '${doc}', '${name}', '${name}', 'pruebas@fenloravisual.com', '3000000000', 'Bogotá', 30, 10000000, 'responsable_iva', true)`
+    ).join(",\n    ")}
+  on conflict (tenant_id, document_type, document) do update set
+    name = excluded.name, kind = 'supplier', updated_at = now()
+`);
 
 // 6) Pedidos del nuevo núcleo, con estado mapping desde el modelo anterior.
 await sql`
@@ -192,7 +223,11 @@ await sql`
     (${T}::uuid, 'sales_order', 'PED', '2026', 621),
     (${T}::uuid, 'invoice', 'FV', '2026', 1),
     (${T}::uuid, 'payment', 'PA', '2026', 1),
-    (${T}::uuid, 'journal', 'AS', '2026', 1)
+    (${T}::uuid, 'journal', 'AS', '2026', 1),
+    (${T}::uuid, 'inventory_movement', 'IM', '2026', 1),
+    (${T}::uuid, 'inventory_count', 'IC', '2026', 1),
+    (${T}::uuid, 'purchase_order', 'OC', '2026', 1),
+    (${T}::uuid, 'purchase_receipt', 'RC', '2026', 1)
   on conflict (tenant_id, doc_type, prefix, period) do update set
     next_value = greatest(public.sequences.next_value, excluded.next_value)
 `;
@@ -203,12 +238,14 @@ await sql.query(`
       ["1110", "Bancos", "asset", "debit"],
       ["1305", "Clientes", "asset", "debit"],
       ["1510", "Inventario", "asset", "debit"],
+      ["1355", "IVA discriminado", "asset", "debit"],
       ["2105", "Anticipos de clientes", "liability", "credit"],
       ["2405", "Proveedores", "liability", "credit"],
       ["3105", "Capital", "equity", "credit"],
       ["4135", "Ventas", "revenue", "credit"],
       ["4175", "Devoluciones sobre ventas", "revenue", "debit"],
       ["4750", "IVA generado", "liability", "credit"],
+      ["4905", "Ingresos varios", "revenue", "credit"],
       ["5105", "Costo de ventas", "expense", "debit"],
       ["5905", "Gastos varios", "expense", "debit"],
     ].map(([code, name, type, nature]) =>
@@ -226,13 +263,15 @@ await sql`
 await sql.query(`
   insert into public.erp_module_settings (tenant_id, module_code, active, config) values
     ${[
-      ["core", true], ["accounting", true], ["invoicing", true], ["receivables", true],
-      ["inventory", true], ["purchases", false], ["crm", false], ["restaurant", false],
-      ["pharmacy", false], ["ecommerce", false], ["projects", false], ["manufacturing", false],
-    ].map(([code, active]) =>
-      `('${T}'::uuid, '${code}', ${active}, '{}'::jsonb)`
+      ["core", true, {}], ["accounting", true, {}], ["invoicing", true, {}], ["receivables", true, {}],
+      ["inventory", true, { valuation: "average" }], ["purchases", true, {}],
+      ["crm", false, {}], ["restaurant", false, {}], ["pharmacy", false, {}],
+      ["ecommerce", false, {}], ["projects", false, {}], ["manufacturing", false, {}],
+    ].map(([code, active, config]) =>
+      `('${T}'::uuid, '${code}', ${active}, '${JSON.stringify(config)}'::jsonb)`
     ).join(",\n    ")}
-  on conflict (tenant_id, module_code) do update set active = excluded.active
+  on conflict (tenant_id, module_code) do update set
+    active = excluded.active, config = excluded.config, updated_at = now()
 `);
 
 const permissions = [
@@ -262,6 +301,20 @@ const permissions = [
   ["warehouse", "audit.export", false],
   ["auditor", "finance.view", true], ["auditor", "audit.export", true],
   ["viewer", "finance.view", true], ["viewer", "audit.export", false],
+  ["owner", "inventory.view", true], ["owner", "stock.transfer", true],
+  ["owner", "purchase.view", true], ["owner", "purchase.create", true], ["owner", "purchase.receive", true],
+  ["admin", "inventory.view", true], ["admin", "stock.transfer", true],
+  ["admin", "purchase.view", true], ["admin", "purchase.create", true], ["admin", "purchase.receive", true],
+  ["accounting", "inventory.view", true], ["accounting", "stock.transfer", false],
+  ["accounting", "purchase.view", true], ["accounting", "purchase.create", false], ["accounting", "purchase.receive", false],
+  ["sales", "inventory.view", true], ["sales", "stock.transfer", false],
+  ["sales", "purchase.view", false], ["sales", "purchase.create", false], ["sales", "purchase.receive", false],
+  ["warehouse", "inventory.view", true], ["warehouse", "stock.transfer", true],
+  ["warehouse", "purchase.view", true], ["warehouse", "purchase.create", false], ["warehouse", "purchase.receive", true],
+  ["auditor", "inventory.view", true], ["auditor", "stock.transfer", false],
+  ["auditor", "purchase.view", true], ["auditor", "purchase.create", false], ["auditor", "purchase.receive", false],
+  ["viewer", "inventory.view", true], ["viewer", "stock.transfer", false],
+  ["viewer", "purchase.view", true], ["viewer", "purchase.create", false], ["viewer", "purchase.receive", false],
 ];
 await sql.query(`
   insert into public.role_permissions (tenant_id, role, permission, allowed) values
@@ -284,7 +337,12 @@ const [counts] = await sql`
     (select count(*)::int from public.sales_orders where tenant_id = ${T}::uuid) as sales_orders,
     (select count(*)::int from public.sales_order_lines where tenant_id = ${T}::uuid) as sales_lines,
     (select count(*)::int from public.accounts where tenant_id = ${T}::uuid) as accounts,
-    (select count(*)::int from public.role_permissions where tenant_id = ${T}::uuid) as permissions
+    (select count(*)::int from public.role_permissions where tenant_id = ${T}::uuid) as permissions,
+    (select count(*)::int from public.warehouses where tenant_id = ${T}::uuid) as warehouses,
+    (select count(*)::int from public.partners where tenant_id = ${T}::uuid and kind = 'supplier') as suppliers,
+    (select count(*)::int from public.inventory_movements where tenant_id = ${T}::uuid) as movements_erp,
+    (select count(*)::int from public.purchase_orders where tenant_id = ${T}::uuid) as purchase_orders,
+    (select count(*)::int from public.invoices_ops where tenant_id = ${T}::uuid) as invoices_ops
 `;
 const [real] = await sql`
   select
