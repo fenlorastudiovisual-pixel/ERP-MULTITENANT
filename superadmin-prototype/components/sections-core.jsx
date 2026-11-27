@@ -11,15 +11,13 @@ import {
 const money = (n) => "$ " + Number(n).toLocaleString("es-CO");
 
 export function Dashboard({ ctx }) {
-  const { tenants, demoLinks, setSection } = ctx;
+  const { tenants, setSection } = ctx;
   const list = Array.isArray(tenants) ? tenants : [];
-  const demos = Array.isArray(demoLinks) ? demoLinks : [];
 
   const active = list.filter((t) => t.status === "Activo").length;
   const trial = list.filter((t) => t.status === "Prueba").length;
   const mrr = list.reduce((s, t) => s + Number(t.mrr || 0), 0);
   const users = list.reduce((s, t) => s + Number(t.users || 0), 0);
-  const withLead = demos.filter((d) => d.lead).length;
 
   const alerts = [];
   const inactive = list.filter((t) => t.status !== "Activo");
@@ -27,15 +25,10 @@ export function Dashboard({ ctx }) {
     text: `${inactive.length} negocio(s) sin estado Activo: ${inactive.map((t) => t.name).join(", ")}.`,
     action: "Ver tenants", section: "tenants",
   });
-  if (withLead) alerts.push({
-    text: `${withLead} demo(s) con lead capturado pendiente de conversión.`,
-    action: "Ver demos", section: "demos",
-  });
 
-  const activity = [
-    ...demos.slice(0, 5).map((d) => ({ icon: "▶", who: "Demo creada", target: d.business_name, when: String(d.created_at || "").slice(0, 10) })),
-    ...list.slice(0, 5).map((t) => ({ icon: "▦", who: "Negocio registrado", target: t.name, when: String(t.created || "").slice(0, 10) })),
-  ].slice(0, 6);
+  const activity = list.slice(0, 6).map((t) => ({
+    icon: "▦", who: "Negocio registrado", target: t.name, when: String(t.created || "").slice(0, 10),
+  }));
 
   const mrrBars = list.map((t) => ({ label: String(t.name).slice(0, 9), value: Number(t.mrr || 0) }));
   const nicheCounts = list.reduce((acc, t) => {
@@ -56,11 +49,8 @@ export function Dashboard({ ctx }) {
       <SectionHead
         eyebrow="Centro de control"
         title="Panel de control"
-        description="Vista global de los negocios y demos guardados en Neon."
-        actions={<>
-          <a className="btn" href="/demos">Nueva demo</a>
-          <Btn tone="primary" icon="◈" onClick={() => setSection("bi")}>Ver reportes</Btn>
-        </>}
+        description="Vista global de los negocios reales guardados en Neon."
+        actions={<Btn tone="primary" icon="◈" onClick={() => setSection("bi")}>Ver reportes</Btn>}
       />
       <div className={"callout" + (alerts.length ? " amber" : " green")}>
         <b>{alerts.length ? alerts.length + " avisos requieren tu atención." : "Sin avisos pendientes."}</b>
@@ -71,7 +61,7 @@ export function Dashboard({ ctx }) {
         <Stat label="Ingresos recurrentes (MRR)" value={money(mrr)} icon="¤" hint="Suma de los tenants" />
         <Stat label="Negocios activos" value={active} delta={`+${trial} en prueba`} icon="▦" tone="green" />
         <Stat label="Usuarios en la plataforma" value={users.toLocaleString("es-CO")} icon="◎" tone="amber" />
-        <Stat label="Demos publicadas" value={demos.length} icon="▶" tone="rose" hint="Creadas en Neon" />
+        <Stat label="Negocios registrados" value={list.length} icon="▦" tone="rose" hint="Tenants reales en Neon" />
       </div>
       <div className="chart-grid">
         <Panel title="MRR por negocio" subtitle="Suma del plan contratado por tenant">
@@ -84,11 +74,11 @@ export function Dashboard({ ctx }) {
         </Panel>
       </div>
       <div className="two-col">
-        <Panel title="Actividad reciente" subtitle="Demos y negocios guardados" actions={<button className="btn btn-sm" onClick={() => setSection("demos")}>Ver demos</button>}>
+        <Panel title="Actividad reciente" subtitle="Negocios guardados" actions={<button className="btn btn-sm" onClick={() => setSection("tenants")}>Ver tenants</button>}>
           <div className="activity">
             {activity.length ? activity.map((a, i) => (
               <div className="activity-item" key={i}>
-                <span className={`activity-dot ${a.icon === "▶" ? "demo" : "tenant"}`}>{a.icon}</span>
+                <span className="activity-dot tenant">{a.icon}</span>
                 <div><b>{a.who}</b> · <b>{a.target}</b><p>{a.when}</p></div>
                 <time>{a.when}</time>
               </div>

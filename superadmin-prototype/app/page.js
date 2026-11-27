@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { SECTIONS, GROUPS, TENANTS_SEED, PLAN_SEED, USERS_SEED, LANGUAGES, TRANSLATIONS_SEED } from "../lib/data";
 import { Dashboard, Tenants, Plans, Billing } from "../components/sections-core";
-import { Users, Languages, Localization, Branding, Modules, Demos } from "../components/sections-config";
+import { Users, Languages, Localization, Branding, Modules } from "../components/sections-config";
 import { Security, Operations, Support, Integrations, Data, BI, Settings } from "../components/sections-ops";
 
 const STORAGE_KEY = "erp-multitenant-superadmin-v1";
@@ -13,7 +13,7 @@ const PRODUCT_NAME = "ERP Multitenant";
 const COMPONENTS = {
   dashboard: Dashboard, tenants: Tenants, plans: Plans, billing: Billing,
   users: Users, languages: Languages, localization: Localization, branding: Branding,
-  modules: Modules, demos: Demos, security: Security, operations: Operations,
+  modules: Modules, security: Security, operations: Operations,
   support: Support, integrations: Integrations, data: Data, bi: BI, settings: Settings,
 };
 
@@ -24,7 +24,6 @@ const SEED_TENANT_IDS = new Set(TENANTS_SEED.filter((t) => t.id !== "t16").map((
 const initialData = () => ({
   tenants: REAL_TENANT_SEED,
   plans: PLAN_SEED,
-  demos: [],
   users: USERS_SEED,
   languages: LANGUAGES,
   translations: TRANSLATIONS_SEED,
@@ -56,8 +55,7 @@ const normalizeState = (saved) => {
     email: tenant.email || base.tenants.find((item) => item.id === tenant.id)?.email || "",
   }));
 
-  // Las demos y leads reales viven en demo_links, no en este JSON.
-  state.demos = [];
+  // Los leads reales viven en Neon, no en este JSON.
   state.leads = [];
   state.__stateVersion = STATE_VERSION;
   return state;
@@ -80,16 +78,6 @@ export default function Page() {
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const [loggingIn, setLoggingIn] = useState(false);
-  const [demoLinks, setDemoLinks] = useState([]);
-
-  const refreshDemoLinks = async () => {
-    try {
-      const res = await fetch("/api/demos", { credentials: "include" });
-      if (!res.ok) return;
-      const json = await res.json();
-      if (Array.isArray(json.demos)) setDemoLinks(json.demos);
-    } catch { /* la consola sigue funcionando sin el listado */ }
-  };
 
   // Cargar estado: primero localStorage (respaldo inmediato), luego Neon si hay sesión.
   useEffect(() => {
@@ -112,7 +100,6 @@ export default function Page() {
         if (!me.ok) return;
         const meJson = await me.json();
         setSessionUser(meJson.user);
-        await refreshDemoLinks();
 
         const res = await fetch("/api/state", { credentials: "include" });
         if (!alive) return;
@@ -238,8 +225,6 @@ export default function Page() {
     section, setSection,
     tenants: data.tenants, setTenants: setValue("tenants"),
     plans: data.plans, setPlans: setValue("plans"),
-    demos: data.demos, setDemos: setValue("demos"),
-    demoLinks, setDemoLinks, refreshDemoLinks,
     users: data.users, setUsers: setValue("users"),
     languages: data.languages, setLanguages: setValue("languages"),
     translations: data.translations, setTranslations: setValue("translations"),
@@ -250,7 +235,7 @@ export default function Page() {
     detailTab, setDetailTab,
     toast, resetData,
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [data, section, selectedTenant, detailTab, demoLinks]);
+  }), [data, section, selectedTenant, detailTab]);
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -325,14 +310,13 @@ export default function Page() {
               {SECTIONS.filter((s) => s.group === group).map((s) => (
                 <button key={s.id} className={`nav-item ${section === s.id ? "on" : ""}`} onClick={() => { setSection(s.id); setSelectedTenant(null); }}>
                   <i>{s.icon}</i><span>{s.label}</span>
-                  {s.id === "demos" && <span className="nav-badge">{data.demos.length}</span>}
                   {s.id === "support" && <span className="nav-badge">4</span>}
                 </button>
               ))}
             </div>
           ))}
         </nav>
-        <div className="sidebar-foot">Prototipo v0.1.0 · {dbMode ? "Neon conectado" : "Datos locales"}<br />17 secciones · 14 demos</div>
+        <div className="sidebar-foot">ERP v0.2.0 · {dbMode ? "Neon conectado" : "Datos locales"}<br />16 secciones · tenants reales</div>
       </aside>
 
       <main className="main">

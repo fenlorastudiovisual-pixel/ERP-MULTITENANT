@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start -p 8790",
     "db:setup": "node database/setup.mjs",
+    "db:seed-ops": "node database/seed-tenant-ops.mjs",
     "db:check": "node database/check.mjs",
     "db:inspect": "node database/inspect.mjs",
     "db:migrate-state": "node database/migrate-state.mjs",

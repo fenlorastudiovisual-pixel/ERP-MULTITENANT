@@ -578,3 +578,114 @@ create policy catalog_read on public.feature_flags for select to public
 drop policy if exists catalog_read on public.plan_flags;
 create policy catalog_read on public.plan_flags for select to public
   using (public.current_tenant_id() is not null or public.is_superadmin());
+
+-- ── Operaciones reales del tenant ────────────────────────────────────────────
+-- Estas tablas son la fuente de verdad del panel /negocio. Nunca se leen desde
+-- la consola del Super Admin salvo impersonación explícita.
+create table if not exists public.products (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  sku text not null,
+  name text not null,
+  description text,
+  category text not null default 'General',
+  price numeric(14,2) not null default 0,
+  cost numeric(14,2) not null default 0,
+  stock integer not null default 0,
+  min_stock integer not null default 0,
+  unit text not null default 'und',
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (tenant_id, sku)
+);
+
+create table if not exists public.customers (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  name text not null,
+  document text,
+  email text,
+  phone text,
+  city text,
+  address text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (tenant_id, document)
+);
+
+create table if not exists public.orders (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  number text not null,
+  customer_id uuid references public.customers(id) on delete set null,
+  status text not null default 'pending', -- pending | confirmed | shipped | delivered | cancelled
+  subtotal numeric(14,2) not null default 0,
+  tax numeric(14,2) not null default 0,
+  total numeric(14,2) not null default 0,
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (tenant_id, number)
+);
+
+create table if not exists public.order_items (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  order_id uuid not null references public.orders(id) on delete cascade,
+  product_id uuid not null references public.products(id) on delete restrict,
+  quantity integer not null check (quantity > 0),
+  unit_price numeric(14,2) not null,
+  total numeric(14,2) not null
+);
+
+create table if not exists public.stock_movements (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  product_id uuid not null references public.products(id) on delete cascade,
+  quantity integer not null,
+  kind text not null, -- in | out | adjustment
+  reason text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists products_tenant_idx on public.products(tenant_id, active, name);
+create index if not exists products_low_stock_idx on public.products(tenant_id, stock);
+create index if not exists customers_tenant_idx on public.customers(tenant_id, name);
+create index if not exists orders_tenant_idx on public.orders(tenant_id, created_at desc);
+create index if not exists orders_tenant_status_idx on public.orders(tenant_id, status);
+create index if not exists order_items_order_idx on public.order_items(order_id);
+create index if not exists stock_movements_product_idx on public.stock_movements(product_id, created_at desc);
+
+alter table public.products enable row level security;
+alter table public.customers enable row level security;
+alter table public.orders enable row level security;
+alter table public.order_items enable row level security;
+alter table public.stock_movements enable row level security;
+
+drop policy if exists tenant_scoped on public.products;
+create policy tenant_scoped on public.products for all to public
+  using (tenant_id = public.current_tenant_id() or public.is_superadmin())
+  with check (tenant_id = public.current_tenant_id() or public.is_superadmin());
+drop policy if exists tenant_scoped on public.customers;
+create policy tenant_scoped on public.customers for all to public
+  using (tenant_id = public.current_tenant_id() or public.is_superadmin())
+  with check (tenant_id = public.current_tenant_id() or public.is_superadmin());
+drop policy if exists tenant_scoped on public.orders;
+create policy tenant_scoped on public.orders for all to public
+  using (tenant_id = public.current_tenant_id() or public.is_superadmin())
+  with check (tenant_id = public.current_tenant_id() or public.is_superadmin());
+drop policy if exists tenant_scoped on public.order_items;
+create policy tenant_scoped on public.order_items for all to public
+  using (tenant_id = public.current_tenant_id() or public.is_superadmin())
+  with check (tenant_id = public.current_tenant_id() or public.is_superadmin());
+drop policy if exists tenant_scoped on public.stock_movements;
+create policy tenant_scoped on public.stock_movements for all to public
+  using (tenant_id = public.current_tenant_id() or public.is_superadmin())
+  with check (tenant_id = public.current_tenant_id() or public.is_superadmin());
+
+alter table public.products force row level security;
+alter table public.customers force row level security;
+alter table public.orders force row level security;
+alter table public.order_items force row level security;
+alter table public.stock_movements force row level security;

@@ -349,72 +349,58 @@ export function Data({ ctx }) {
 /* ─────────────────────────── Reportes y BI ─────────────────────────── */
 
 export function BI({ ctx }) {
-  const { demoLinks, tenants, refreshDemoLinks } = ctx;
+  const { tenants } = ctx;
   const [tab, setTab] = useState("global");
   const list = Array.isArray(tenants) ? tenants : [];
-  const demos = Array.isArray(demoLinks) ? demoLinks : [];
 
   const mrr = list.reduce((s, t) => s + Number(t.mrr || 0), 0);
   const users = list.reduce((s, t) => s + Number(t.users || 0), 0);
-  const visits = demos.reduce((s, d) => s + Number(d.visits || 0), 0);
-  const withLead = demos.filter((d) => d.lead).length;
-  const converted = demos.filter((d) => d.status === "Convertida").length;
-
-  const nicheCounts = demos.reduce((acc, d) => {
-    const key = d.niche_name || d.niche_id || "Sin nicho";
+  const statusRows = ["Activo", "Prueba", "Suspendido", "Archivado"].map((label) => ({
+    label, value: list.filter((t) => t.status === label).length,
+  }));
+  const nicheCounts = list.reduce((acc, t) => {
+    const key = t.niche || "Sin nicho";
     acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
   const nicheRows = Object.entries(nicheCounts).map(([label, value]) => ({
-    label, value, pct: Math.round((value / (demos.length || 1)) * 100),
+    label, value, pct: Math.round((value / (list.length || 1)) * 100),
   }));
-  const funnel = [
-    ["Demos creadas", demos.length],
-    ["Visitas registradas", visits],
-    ["Con lead", withLead],
-    ["Convertidas", converted],
-  ];
 
   return <>
-    <SectionHead eyebrow="Crecimiento" title="Reportes y BI global" description="Métricas calculadas sobre los tenants y las demos guardadas en Neon."
-      actions={<Btn icon="↻" onClick={refreshDemoLinks}>Actualizar datos</Btn>} />
-    <Tabs tabs={[{ id: "global", label: "Visión global" }, { id: "embudos", label: "Embudos" }, { id: "reportes", label: "Reportes guardados" }]} value={tab} onChange={setTab} />
+    <SectionHead eyebrow="Crecimiento" title="Reportes y BI global" description="Métricas calculadas sobre los tenants reales guardados en Neon." />
+    <Tabs tabs={[{ id: "global", label: "Visión global" }, { id: "negocios", label: "Negocios" }, { id: "reportes", label: "Reportes guardados" }]} value={tab} onChange={setTab} />
     {tab === "global" && <>
       <div className="stat-grid">
         <Stat label="MRR total" value={money(mrr)} icon="¤" hint="Suma de tenants" />
         <Stat label="Negocios activos" value={list.filter((t) => t.status === "Activo").length} icon="▦" tone="green" />
         <Stat label="Usuarios" value={users.toLocaleString("es-CO")} icon="◎" tone="amber" />
-        <Stat label="Leads en demos" value={withLead} icon="♡" tone="rose" />
+        <Stat label="Negocios registrados" value={list.length} icon="▣" tone="rose" />
       </div>
       <div className="chart-grid">
         <Panel title="MRR por negocio" subtitle="Plan contratado por tenant">
           {list.length ? <Bars data={list.map((t) => ({ label: String(t.name).slice(0, 9), value: Number(t.mrr || 0) }))} height={170} /> : <div className="empty-state"><span>▦</span><b>Sin negocios registrados</b></div>}
         </Panel>
-        <Panel title="Demos por nicho" subtitle="Distribución real de las demos creadas">
+        <Panel title="Negocios por nicho" subtitle="Distribución real de tenants">
           {nicheRows.length
             ? <Donut items={nicheRows.map((n, i) => ({ ...n, color: ["#6366f1", "#22c55e", "#f59e0b", "#ec4899", "#94a3b8"][i % 5] }))} />
-            : <div className="empty-state"><span>▶</span><b>Sin demos creadas</b></div>}
+            : <div className="empty-state"><span>◈</span><b>Sin datos de nicho</b></div>}
         </Panel>
       </div>
     </>}
-    {tab === "embudos" && <div className="two-col">
-      <Panel title="Embudo real de demos">
-        <div className="funnel">{funnel.map(([label, value], i) => (
-          <div className="funnel-step" key={label}>
-            <div className="funnel-bar" style={{ width: `${100 - i * 14}%`, background: ["#6366f1", "#818cf8", "#a5b4fc", "#34d399"][i] }}>
-              <b>{value}</b><span>{label}</span>
-            </div>
-            {i < funnel.length - 1 && <div className="funnel-arrow">↓</div>}
-          </div>
-        ))}</div>
+    {tab === "negocios" && <div className="two-col">
+      <Panel title="Estado de los negocios" subtitle="Distribución real por estado">
+        <div className="mini-list">
+          {statusRows.map((row) => <li key={row.label}><span>▦</span>{row.label}<b style={{ marginLeft: "auto" }}>{row.value}</b></li>)}
+        </div>
       </Panel>
-      <Panel title="Demos por nicho">
+      <Panel title="Negocios por nicho">
         {nicheRows.length ? nicheRows.map((n) => (
           <div key={n.label} style={{ marginBottom: 11 }}>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 4 }}><span>{n.label}</span><b>{n.value} · {n.pct}%</b></div>
             <Progress value={n.pct} />
           </div>
-        )) : <div className="empty-state"><span>▶</span><b>Sin demos creadas</b></div>}
+        )) : <div className="empty-state"><span>◈</span><b>Sin negocios registrados</b></div>}
       </Panel>
     </div>}
     {tab === "reportes" && <Panel title="Reportes guardados">
@@ -432,7 +418,7 @@ export function Settings({ ctx }) {
   return <>
     <SectionHead eyebrow="Sistema" title="Configuración del sistema" description="Parámetros globales, feature flags, colas de correo, almacenamiento, despliegues y modo mantenimiento."
       actions={<Btn tone="primary" icon="✓" onClick={() => toast("Configuración guardada")}>Guardar todo</Btn>} />
-    <div className="callout amber"><b>Modo demostración.</b> Los cambios se guardan en el navegador (localStorage). No hay backend real conectado todavía.</div>
+    <div className="callout green">Configuración persistida en Neon. El navegador solo conserva una copia temporal mientras carga.</div>
     <Tabs tabs={[{ id: "generales", label: "Parámetros" }, { id: "flags", label: "Feature flags" }, { id: "infra", label: "Infraestructura" }, { id: "versiones", label: "Versiones" }, { id: "datos", label: "Datos" }]} value={tab} onChange={setTab} />
     {tab === "generales" && <div className="two-col">
       <Panel title="Parámetros globales">
@@ -479,12 +465,12 @@ export function Settings({ ctx }) {
     </Panel>}
     {tab === "datos" && <div className="two-col">
       <Panel title="Fuente de datos" subtitle="Neon es la fuente de verdad">
-        <div className="callout green">Tenants, demos, leads y configuración se guardan en Neon. El navegador solo mantiene una copia temporal mientras carga; recargar la página vuelve a leer la base de datos.</div>
+        <div className="callout green">Tenants, operaciones y configuración se guardan en Neon. El navegador solo mantiene una copia temporal mientras carga; recargar la página vuelve a leer la base de datos.</div>
         <div className="callout">No hay botón de restablecimiento: eso repoblaría negocios de ejemplo que ya no son tenants reales.</div>
       </Panel>
       <Panel title="Acerca de este ERP">
         <div className="kv"><div><small>Entorno</small><b>Producción</b></div><div><small>Base de datos</small><b>Neon Postgres</b></div><div><small>Aplicación</small><b>Cloudflare Workers</b></div><div><small>Stack</small><b>Next 16 · React 19</b></div></div>
-        <div className="callout green">ERP multitenant independiente. Samjuro es el tenant de prueba; las demos son enlaces públicos con datos operativos generados desde Neon.</div>
+        <div className="callout green">ERP multitenant independiente. Samjuro es el tenant de prueba; sus productos, clientes, pedidos e inventario se gestionan en /negocio contra Neon.</div>
       </Panel>
     </div>}
   </>;

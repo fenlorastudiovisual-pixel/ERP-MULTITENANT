@@ -11,7 +11,6 @@ export const SECTIONS = [
   { id: "localization", label: "Localización fiscal", icon: "⌘", group: "Configuración" },
   { id: "branding", label: "Marca y white-label", icon: "✦", group: "Configuración" },
   { id: "modules", label: "Módulos y versiones", icon: "▤", group: "Configuración" },
-  { id: "demos", label: "Demos", icon: "▶", group: "Configuración" },
   { id: "security", label: "Seguridad y auditoría", icon: "⚿", group: "Confianza" },
   { id: "operations", label: "Operaciones", icon: "⌁", group: "Confianza" },
   { id: "support", label: "Soporte y éxito", icon: "☏", group: "Crecimiento" },
