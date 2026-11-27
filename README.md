@@ -52,7 +52,7 @@ El prototipo funciona sin base de datos (datos en `localStorage`). Para conectar
 
 ## ERP operativo (Fase 3)
 
-El panel `/negocio` ya trabaja contra Neon con un solo modelo de datos y un solo libro contable por tenant. Samjuro (`t16`) es **solo lectura**: todas las pruebas y escrituras ocurren en `t17_sandbox`.
+El panel `/negocio` ya trabaja contra Neon con un solo modelo de datos y un solo libro contable por tenant. `t16` es **solo lectura**: todas las pruebas y escrituras ocurren en `t17_sandbox` (Samjuro Piloto). **Los datos actuales de ambos tenants son sintéticos, no pertenecen a Samjuro**: hay que importar la información real desde la Supabase de Samjuro en modo solo lectura antes de usar estas cifras como reales.
 
 ```bash
 cd superadmin-prototype

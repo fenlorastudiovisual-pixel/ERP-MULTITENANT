@@ -677,7 +677,7 @@ export default function BusinessPanel() {
       <header className="tenant-head">
         <div className="tenant-logo" style={{ background: tenant.color }}>{tenant.name.slice(0, 2).toUpperCase()}</div>
         <div>
-          <div className="tenant-eyebrow">ERP operativo · datos reales en Neon</div>
+          <div className="tenant-eyebrow">ERP operativo · piloto en Neon</div>
           <h1>{tenant.name}</h1>
           <p>{tenant.niche} · {tenant.city}, {tenant.country}</p>
         </div>
@@ -688,6 +688,9 @@ export default function BusinessPanel() {
       </header>
 
       <div className="callout">Sesión de <b>{email}</b> como <b>{role}</b>. Productos, clientes, pedidos e inventario de <b>{tenant.name}</b> en tiempo real.</div>
+      {tenant.id === "t17_sandbox" && <div className="callout amber">
+        <b>Datos de prueba, no información de Samjuro.</b> Los productos ('SKU-00001', 'Limpia Económico…'), clientes y pedidos que ves fueron generados para probar el sistema. Las cifras NO corresponden a tu empresa. Falta importar tus datos reales desde la Supabase de Samjuro en modo solo lectura.
+      </div>}
       {(error || notice) && <div className={`callout ${error ? "amber" : "green"}`}>{error || notice}</div>}
 
       <Tabs tabs={TABS} value={tab} onChange={setTab} />
