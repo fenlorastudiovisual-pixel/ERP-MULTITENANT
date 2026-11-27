@@ -2,18 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { TENANTS_SEED } from "../../lib/data";
 import { Panel, Tag, Btn } from "../../components/ui";
 
-const NICHE_MATCH = [
-  ["d1", /belleza|retail/i], ["d2", /restaurante/i], ["d3", /distribuidora/i],
-  ["d4", /manufactura/i], ["d5", /construcción/i], ["d6", /clínica/i],
-  ["d7", /farmacia/i], ["d8", /salón|spa/i], ["d9", /educación/i],
-  ["d10", /hotel/i], ["d11", /logística/i], ["d12", /agricultura/i],
-  ["d13", /servicios profesionales/i], ["d14", /e-commerce/i],
-];
-
-const nicheFor = (label) => NICHE_MATCH.find(([, pattern]) => pattern.test(label || ""))?.[0] || "d13";
 const dateLabel = (value) => (value ? String(value).slice(0, 10) : "—");
 
 export default function DemoCenter() {
@@ -116,8 +106,8 @@ export default function DemoCenter() {
               {templates.map((item) => <option key={item.id} value={item.id}>{item.icon} {item.name}</option>)}
             </select>
           </label>
-          <label className="field">Nombre del negocio
-            <input value={form.businessName} placeholder="Ej. Farmacia Sol"
+          <label className="field">Nombre de la demo
+            <input value={form.businessName} placeholder="Ej. Demo Farmacia"
               onChange={(e) => setForm({ ...form, businessName: e.target.value })} />
           </label>
           <label className="field">Días activa
@@ -127,19 +117,14 @@ export default function DemoCenter() {
           <Btn tone="primary" onClick={() => create()} disabled={busy || !form.businessName.trim()}>
             Crear demo
           </Btn>
-          <Btn onClick={() => create(TENANTS_SEED.filter((t) => t.id !== "t16").map((t) => ({
-            nicheId: nicheFor(t.niche), businessName: t.name,
-          })))} disabled={busy}>
-            Generar 15 demos de muestra
-          </Btn>
         </div>
         <p className="auth-subtitle" style={{ marginTop: 10 }}>
-          El botón masivo convierte los negocios que antes eran datos decorativos en demos navegables. Samjuro queda fuera: es el cliente de prueba.
+          Cada demo se crea solo con el nicho y el nombre que indiques. No hay generación masiva de negocios de ejemplo.
         </p>
       </Panel>
 
       <Panel title="Demos creadas" subtitle="Cada tarjeta es una URL pública independiente con datos guardados en Neon." bodyClass="tight">
-        {rows.length === 0 && <div className="callout">Todavía no hay demos. Crea una arriba o genera las 15 de los negocios.</div>}
+        {rows.length === 0 && <div className="callout">Todavía no hay demos. Crea la primera arriba.</div>}
         <div className="demo-card-grid">
           {rows.map((row) => (
             <div className="demo-card" key={row.token}>

@@ -92,13 +92,13 @@ Si hay que crear el token de API otra vez:
 Ya no son tarjetas decorativas. Cada demo es un panel navegable con datos operativos guardados en Neon.
 
 1. Entra en **https://erp.fenloravisual.com/demos** (dentro de la consola del Super Admin).
-2. Elige el nicho, escribe el nombre del negocio y pulsa **Crear demo**. Se generan 24 productos, 26 clientes, 42 pedidos, 24 facturas y los módulos propios del nicho (agenda, obras, producción, envíos, fincas, suscripciones o alertas).
+2. Elige el nicho, escribe un nombre de demo (por ejemplo, `Demo Farmacia`) y pulsa **Crear demo**. Se generan 24 productos, 26 clientes, 42 pedidos, 24 facturas y los módulos propios del nicho (agenda, obras, producción, envíos, fincas, suscripciones o alertas).
 3. Pulsa **Abrir** para recorrerla: puedes buscar, crear pedidos, avanzar estados y marcar facturas pagadas. Los cambios se guardan en esa demo.
 4. Pulsa **Copiar enlace** o escribe el WhatsApp del cliente y pulsa **Enviar por WhatsApp**. Se abre `wa.me` con un mensaje ya redactado y el enlace `https://erp.fenloravisual.com/demo/<token>`. No se envía nada automáticamente: el mensaje queda listo en el teléfono para que lo envíes tú.
 5. El prospecto explora y pulsa **Solicitar mi acceso**. Eso captura nombre, WhatsApp y correo; en el centro de demos aparece como **Con lead**.
 6. Cuando quieras, pulsa **Convertir en tenant**: la demo se convierte en un negocio real y el correo del lead queda como owner.
 
-El botón **Crear las 15 demos de los negocios** convierte los 15 negocios de muestra (`t1`–`t15`) en demos navegables. Samjuro (`t16`) queda fuera porque es el tenant de prueba real.
+Ya no hay botón de generación masiva: ese botón tomaba los negocios semilla (`t1`–`t15`) y los convertía en demos con nombres falsos. Las 15 demos existentes se renombraron con etiquetas neutras por nicho (`Demo Retail`, `Demo Restaurante`, …) y las nuevas se crean una a una con el nombre que indiques.
 
 Los enlaces son opacos, caducan a los 14 días por defecto y viven en `public.demo_links` con RLS. Los datos se generan con `lib/demo-data.js`. Para crear la tabla en una instalación nueva:
 
@@ -253,7 +253,7 @@ npm run preview
 - **Panel de control** con KPIs globales, ingresos, módulos más usados, actividad y alertas.
 - **Tenants**: filtros, alta asistida, detalle con pestañas, clonar, suspender y cambiar modo de aislamiento.
 - **Planes y funciones**: editor visual de módulos (incluido / add-on / no disponible), límites, feature flags, precio y simulador.
-- **Demos reales**: centro en `/demos` con **14 nichos** y datos operativos completos, enlace público `/demo/<token>` interactivo, envío por WhatsApp con `wa.me`, captura de lead y conversión a tenant. El botón masivo genera 15 demos de muestra (Samjuro excluido). La sección «Demos» de la consola muestra solo las demos guardadas en `demo_links`; no hay catálogo decorativo ni botón para crear tenants falsos.
+- **Demos reales**: centro en `/demos` con **14 nichos** y datos operativos completos, enlace público `/demo/<token>` interactivo, envío por WhatsApp con `wa.me`, captura de lead y conversión a tenant. No hay generación masiva: las demos se crean una a una y sus nombres son neutros por nicho, sin negocios falsos. La sección «Demos» de la consola muestra solo las demos guardadas en `demo_links`; no hay catálogo decorativo.
 - **Configuración**: usuarios/roles/SSO, idiomas y traducciones, localización fiscal, white-label con vista previa en vivo, módulos y versiones.
 - **Operaciones**: seguridad y auditoría, observabilidad, cuotas y colas, soporte con SLA, integraciones, migración de datos, BI global y ajustes del sistema.
 - **Persistencia**: Neon (JSONB con RLS) es la fuente de verdad; `localStorage` solo es una copia temporal mientras carga. Ya no hay botón que restablezca datos de ejemplo: los tenants se crean al convertir una demo y el tenant de prueba es Samjuro (`t16`).
