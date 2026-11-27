@@ -50,6 +50,24 @@ El prototipo funciona sin base de datos (datos en `localStorage`). Para conectar
 
 `.env.local` está excluido en `.gitignore`: la connection string **nunca** debe subirse a GitHub.
 
+## ERP operativo (Fase 2)
+
+El panel `/negocio` ya trabaja contra Neon con un solo modelo de datos y un solo libro contable por tenant. Samjuro (`t16`) es **solo lectura**: todas las pruebas y escrituras ocurren en `t17_sandbox`.
+
+```bash
+cd superadmin-prototype
+npm run db:erp-core   # migración aditiva: 48 tablas con RLS forzado
+npm run db:sandbox    # clona t16 en t17_sandbox y verifica los conteos de t16
+npm run build
+npm run dev           # http://localhost:8790
+```
+
+- Las sesiones nuevas entran por defecto al sandbox; el panel muestra «Samjuro Sandbox» en la pestaña **Detalle**.
+- **Finanzas** emite facturas desde pedidos confirmados/entregados, registra pagos y consulta cartera y asientos.
+- `public.invoices` sigue siendo la facturación de Fenlora al tenant; las facturas del negocio están en `public.invoices_ops`.
+- DIAN queda preparada (numeración, UUID/QR, eventos) pero sin envío real hasta tener resolución y certificado.
+- La sección «Demos» permanece vacía: sin botones ni enlaces de prueba.
+
 ## Dominios y despliegue
 
 Neon es solo Postgres. Los dominios y subdominios (`erp.tudominio.com`, `demo.tudominio.com`, etc.) se gestionan en Cloudflare.

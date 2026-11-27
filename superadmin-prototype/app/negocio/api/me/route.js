@@ -8,7 +8,7 @@ import { getTenantAccessEmail } from "../../../../lib/access";
 import {
   findUserByEmail, getTenantMfa, getTenantSession,
 } from "../../../../lib/auth";
-import { resolveTenantIdentity } from "../../../../lib/tenant-identity";
+import { listTenantIdentities, resolveTenantIdentity } from "../../../../lib/tenant-identity";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -18,6 +18,7 @@ export async function GET(request) {
 
   let email = null;
   let viaSession = false;
+  let preferredTenantId = null;
 
   const session = await getTenantSession(request);
   if (session) {
@@ -26,6 +27,7 @@ export async function GET(request) {
       if (user && user.id === session.sub && user.epoch === session.epoch) {
         email = user.email;
         viaSession = true;
+        preferredTenantId = session.tenant_id ? String(session.tenant_id) : null;
       }
     } catch {
       email = null;
@@ -45,7 +47,13 @@ export async function GET(request) {
   }
 
   try {
-    const identity = await resolveTenantIdentity(email);
+    const identity = await resolveTenantIdentity(email, preferredTenantId);
+    if (!identity && preferredTenantId) {
+      return NextResponse.json({
+        error: "No tienes acceso al negocio solicitado por la sesión.",
+        email,
+      }, { status: 403 });
+    }
     if (!identity) {
       return NextResponse.json({
         error: "Tu correo no está vinculado a ningún negocio. Pide al administrador que te invite.",
@@ -53,6 +61,7 @@ export async function GET(request) {
       }, { status: 403 });
     }
 
+    const tenants = await listTenantIdentities(email);
     const results = await runAsTenant(identity.tenant_id, (tx) => [
       tx`
         select id, slug, name, niche, country_name, city, status, isolation_mode,
@@ -133,6 +142,7 @@ export async function GET(request) {
       modules: results[3],
       invoices: results[4],
       team: results[5],
+      tenants,
     });
   } catch (error) {
     return NextResponse.json({ error: error?.message || String(error) }, { status: 500 });

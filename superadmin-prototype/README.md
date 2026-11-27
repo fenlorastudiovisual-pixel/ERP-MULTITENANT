@@ -255,7 +255,7 @@ npm run preview
 - **Panel de control** con KPIs globales, ingresos, módulos más usados, actividad y alertas.
 - **Tenants**: filtros, alta asistida, detalle con pestañas, clonar, suspender y cambiar modo de aislamiento.
 - **Planes y funciones**: editor visual de módulos (incluido / add-on / no disponible), límites, feature flags, precio y simulador.
-- **ERP operativo** (`/negocio`): resumen con ventas y estado de pedidos, catálogo de **1.240 productos**, **480 clientes**, **620 pedidos** y **2.168 líneas** de Samjuro en Neon. Permite crear productos y clientes, armar pedidos desde el catálogo (precio tomado de la BD), descontar stock con movimientos, ajustar inventario, cambiar estados, ver facturas y activar MFA. Cada consulta usa `runAsTenant` con RLS; la identidad sale de la sesión con contraseña, nunca de la URL.
+- **ERP operativo** (`/negocio`): resumen con ventas y estado de pedidos, catálogo de **1.240 productos**, **480 clientes**, **620 pedidos** y **2.168 líneas** de Samjuro en Neon. Permite crear productos y clientes, armar pedidos desde el catálogo (precio tomado de la BD), descontar stock con movimientos, ajustar inventario, cambiar estados y activar MFA. La pestaña **Finanzas** emite facturas operativas desde pedidos confirmados/entregados, registra pagos, consulta cartera por antigüedad y muestra el libro contable. Cada consulta usa `runAsTenant` con RLS; la identidad y el tenant salen de la sesión firmada, nunca de la URL.
 - **Demos fuera de la consola**: el centro `/demos` ya no está enlazado desde el Super Admin. No se invierte en demos: el trabajo está en los ERP operativos contra Neon.
 - **Configuración**: usuarios/roles/SSO, idiomas y traducciones, localización fiscal, white-label con vista previa en vivo, módulos y versiones.
 - **Operaciones**: seguridad y auditoría, observabilidad, cuotas y colas, soporte con SLA, integraciones, migración de datos, BI global y ajustes del sistema.
@@ -271,6 +271,15 @@ npm run db:seed-ops    # siembra 1.240 productos, 480 clientes y 620 pedidos en 
 
 El seed es idempotente: borra solo las operaciones de `t16` y las vuelve a crear. Los datos del panel `/negocio` se leen de `public.products`, `public.customers`, `public.orders`, `public.order_items` y `public.stock_movements`; las métricas de la consola NO mezclan esas tablas.
 
+## Núcleo ERP y sandbox
+
+```bash
+npm run db:erp-core   # añade el núcleo transaccional y el módulo financiero (48 tablas con RLS)
+npm run db:sandbox    # crea t17_sandbox desde t16 y verifica que t16 no cambió
+```
+
+Samjuro (`t16`) queda en **solo lectura**: las sesiones nuevas del panel entran en `t17_sandbox`. Las facturas del negocio viven en `public.invoices_ops`; `public.invoices` sigue siendo la facturación de Fenlora al tenant. DIAN está preparada (numeración, UUID/QR y eventos) pero no se envía nada hasta tener resolución y certificado. La sección «Demos» continúa vacía.
+
 ## Estructura
 
 ```
@@ -281,6 +290,8 @@ app/api/health/route.js      Comprobación de conexión
 lib/data.js                  Datos semilla (10 módulos base + 8 extendidos, 16 tenants, 14 plantillas)
 lib/demo-data.js             Generador determinista de datos operativos por nicho
 lib/db.js                    Cliente Neon + contexto RLS por transacción
+lib/erp/permissions.js       RBAC granular y auditoría del ERP
+lib/erp/finance.js           Facturación, cartera y asientos balanceados
 app/demos/page.js            Centro de demos del Super Admin
 app/demo/[token]/page.js     Panel público interactivo de la demo
 components/ui.jsx            Componentes reutilizables
@@ -289,6 +300,8 @@ components/sections-config.jsx Usuarios, Idiomas, Localización, Branding, Módu
 components/sections-ops.jsx  Seguridad, Operaciones, Soporte, Integraciones, Datos, BI, Settings
 database/schema.sql          Esquema Postgres con RLS, planes, módulos, flags, demos y auditoría
 database/setup.mjs           Aplica schema.sql a Neon
+database/erp-core.sql        Migración aditiva del núcleo ERP
+database/seed-sandbox.mjs    Clona t16 en t17_sandbox sin escribir en t16
 database/check.mjs           Verifica conexión y contexto RLS
 database/build-worker.mjs    Compila el Worker sin hornear secretos
 open-next.config.ts          Configuración OpenNext para Cloudflare

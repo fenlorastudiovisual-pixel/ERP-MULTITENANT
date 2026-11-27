@@ -1,6 +1,6 @@
 # Plan ultra detallado de los ERP — ERP Multitenant / Fenlora Visual Studio
 
-**Estado:** propuesta para aprobación. **No implementar más ERP hasta que confirms las decisiones del §14.**
+**Estado:** modelo aprobado por el usuario («hazla como lo hacen los grandes»). Fases 0–2 implementadas y verificadas en Neon; siguiente: Fase 3 (inventario y compras). Samjuro (`t16`) sigue en solo lectura.
 **Fecha:** 2026-11-26.
 **Alcance:** plataforma `ERP-MULTITENANT` (proyecto independiente), tenant real `t16` = Samjuro usado **solo como referencia de lectura**, tenant sandbox `t17_sandbox` para pruebas de escritura, producción `https://erp.fenloravisual.com`.
 
@@ -532,7 +532,7 @@ Las tablas actuales se conservan como capa de compatibilidad hasta que la nueva 
 
 ## 14. Decisiones: estado y pendientes
 
-1. **Modelo («suite modular con complementos internos», §3.4).** **Pendiente de tu confirmación explícita** después de la explicación con fuentes: 1 ERP lógico por tenant, un solo panel y un solo libro contable; los módulos se activan/desactivan como complementos dentro de esa suite; solo se recurre a best-of-breed externo si el núcleo no llega.
+1. **Modelo («suite modular con complementos internos», §3.4).** **Aprobado y aplicado:** 1 ERP lógico por tenant, un solo panel y un solo libro contable; los módulos se activan/desactivan como complementos dentro de esa suite; solo se recurre a best-of-breed externo si el núcleo no llega.
 2. **¿Confirmás el vertical inicial?** Retail/Distribuidora, con Samjuro (`t16`) como referencia de solo lectura y `t17_sandbox` para probar. **Confirmado por el usuario.**
 3. **¿Cada empresa jurídica del mismo dueño debe ser otro tenant?** Propuesta: sí, si factura con NIT propio o requiere balance separado; si es solo una sucursal, se modela como almacén/centro de costo dentro del mismo tenant.
 4. **¿Valoración de inventario inicial?** Propuesta: promedio ponderado, con opción FIFO en la configuración. El sandbox arranca con el coste actual de `products` copiado desde Samjuro; el tenant real no se modifica.
@@ -548,10 +548,10 @@ Las tablas actuales se conservan como capa de compatibilidad hasta que la nueva 
 
 | Fase | Entregable | Tablas / APIs | Criterio de aceptación real |
 | --- | --- | --- | --- |
-| **0. Gobernanza (actual)** | Este plan + sección Demos vacía + README | — | Plan presentado y build OK; consola con 17 secciones, Demos sin acciones; arquitectura pendiente de confirmación |
-| **1. Núcleo maestro y sequences** | Creación de `t17_sandbox` por copia y migración de `products/customers/orders/items/movimientos` al nuevo modelo sin borrar originales; `sequences`; `role_permissions` | `items`, `partners`, `sales_orders`, `sequences`, `role_permissions` | 1.240/480/620/2.168/1.980 filas copiadas y contadas en el sandbox; numeración concurrente sin duplicados; `t16` sin cambios |
-| **2. Finanzas mínimas** | Factura operativa, cartera, pagos, contabilidad de asientos y reportes básicos | `invoices_ops`, `invoice_lines`, `receivables`, `payments_in`, `journal_entries`, `journal_lines`, `accounts`, `periods` | Pedido clonado en sandbox → factura → pago → asiento balanceado → P&L; cartera por edades consultable; `t16` sin cambios |
-| **3. Inventario y compras** | Multi-almacén, valoración, conteos, OC, recepciones, proveedores | `warehouses`, `stock_balances`, `stock_movements_v2`, `purchase_orders`, `purchase_receipts`, `payables` | Transferencia entre almacenes; ajuste con motivo; recepción que genera entrada + asiento |
+| **0. Gobernanza ✅** | Plan aprobado + sección Demos vacía + README | — | Build OK; consola con 17 secciones, Demos sin acciones; arquitectura aprobada |
+| **1. Núcleo maestro y sequences ✅** | `t17_sandbox` creado por copia; maestros canónicos y numeración atómica sin borrar originales | `items`, `partners`, `sales_orders`, `sequences`, `role_permissions`, `erp_module_settings` | 1.240/480/620/2.168/1.980 filas copiadas; 48 tablas con RLS forzado; `t16` sin cambios |
+| **2. Finanzas mínimas ✅** | Factura operativa, cartera, pagos, contabilidad de asientos y pestaña «Finanzas» | `invoices_ops`, `invoice_lines`, `receivables`, `payments_in`, `journal_entries`, `journal_lines`, `accounts`, `periods` | Pedido `PED-2026-00146` → `FV-000001` → `PA-000001` → `AS-000001/000002` balanceados; pago sin aplicar `PA-000002` → `AS-000003` balanceado; cartera en 0; `t16` con 0 documentos financieros |
+| **3. Inventario y compras (siguiente)** | Multi-almacén, valoración, conteos, OC, recepciones, proveedores | `warehouses`, `stock_balances`, `stock_movements_v2`, `purchase_orders`, `purchase_receipts`, `payables` | Transferencia entre almacenes; ajuste con motivo; recepción que genera entrada + asiento |
 | **4. CRM/WhatsApp y BI** | Leads, oportunidades, `wa.me`, tableros por rol | `leads_ops`, `opportunities`, `whatsapp_links`, `dashboard_widgets`, `report_definitions` | Enlace `wa.me` con datos reales; KPI con drill-down al documento |
 | **5. Seguridad avanzada** | Permisos granulares completos, auditoría enriquecida, MFA owner, impersonación | `role_permissions`, `audit_log` extendido, `tenant_mfa` | Matriz RBAC aplicada en API; intento de acción prohibida devuelve 403 y deja auditoría |
 | **6. Perfil Restaurante** | Mesas, comandas, recetas, POS, propinas | Tablas del §7 | Pedido de mesa → comanda → factura → asiento; food cost calculado |
@@ -598,5 +598,8 @@ Las tablas actuales se conservan como capa de compatibilidad hasta que la nueva 
 ## 18. Estado actual del código relacionado
 
 - Sección «Demos» restaurada en `lib/data.js` (17 secciones) y `app/page.js`; componente vacío `Demos` en `components/sections-config.jsx` sin botones ni enlaces.
-- `README.md` actualizado para reflejar 17 secciones y Demos en pausa.
-- **Pendiente:** build, commit, push y deploy de ese cambio; no se ejecuta hasta que confirmes el plan y el vertical inicial.
+- Migración aditiva `database/erp-core.sql` aplicada (`npm run db:erp-core`): 103 sentencias, 48 tablas con RLS forzado.
+- Sandbox `t17_sandbox` (`76fa9913-4ee3-40c4-bd43-ff300ad78d61`) clonado desde `t16` (`03dac6f5-e99a-5fce-97f7-d15b9964c09d`) con `npm run db:sandbox`; conteos 1.240/480/620/2.168/1.980 intactos en Samjuro.
+- Núcleo financiero: `lib/erp/finance.js`, `lib/erp/permissions.js`, APIs `/negocio/api/finance/*`, pestaña «Finanzas» y selector de empresa con sesión firmada.
+- Validación real en Neon: factura `FV-000001`, cobro `PA-000001`, anticipo `PA-000002` y asientos `AS-000001` a `AS-000003` con débito = crédito en cabecera y líneas. `t16` sigue con 0 documentos financieros.
+- `npm run build` OK; commit, push y deploy incluidos en esta entrega.

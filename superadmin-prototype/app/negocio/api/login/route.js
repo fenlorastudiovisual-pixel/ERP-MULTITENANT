@@ -35,6 +35,7 @@ export async function POST(request) {
   const email = String(body?.email || "").trim().toLowerCase();
   const password = String(body?.password || "");
   const code = String(body?.code || "").trim();
+  const tenantId = String(body?.tenantId || "").trim();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || !password || password.length > 200) {
     return NextResponse.json({ error: "Correo o contraseña no válidos" }, { status: 400 });
   }
@@ -42,7 +43,10 @@ export async function POST(request) {
   try {
     // Resolver primero el negocio evita distinguir "correo inexistente" de
     // "contraseña incorrecta": ambos devuelven el mismo error genérico.
-    const identity = await resolveTenantIdentity(email);
+    const identity = await resolveTenantIdentity(email, tenantId || null);
+    if (!identity && tenantId) {
+      return NextResponse.json({ error: "No tienes acceso al negocio solicitado" }, { status: 403 });
+    }
     if (!identity) return badCredentials();
 
     const user = await findUserByEmail(email);

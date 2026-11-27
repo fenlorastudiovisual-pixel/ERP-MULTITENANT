@@ -12,6 +12,7 @@ const fail = (status, message, extra = {}) => ({ error: { status, message, ...ex
 export async function resolveBusinessContext(request) {
   let email = null;
   let authMode = "access";
+  let preferredTenantId = null;
 
   const session = await getTenantSession(request);
   if (session) {
@@ -20,6 +21,9 @@ export async function resolveBusinessContext(request) {
       if (user && user.id === session.sub && user.epoch === session.epoch) {
         email = user.email;
         authMode = "password";
+        // La sesión puede apuntar a un tenant distinto (sandbox o cambio de empresa).
+        // Se acepta solo si el usuario es miembro activo de ese tenant.
+        preferredTenantId = session.tenant_id ? String(session.tenant_id) : null;
       }
     } catch {
       email = null;
@@ -38,9 +42,12 @@ export async function resolveBusinessContext(request) {
 
   let identity = null;
   try {
-    identity = await resolveTenantIdentity(email);
+    identity = await resolveTenantIdentity(email, preferredTenantId);
   } catch (error) {
     return fail(500, error?.message || String(error));
+  }
+  if (!identity && preferredTenantId) {
+    return fail(403, "No tienes acceso al negocio solicitado por la sesión.", { email });
   }
   if (!identity) {
     return fail(403, "Tu correo no está vinculado a ningún negocio. Pide al administrador que te invite.", { email });

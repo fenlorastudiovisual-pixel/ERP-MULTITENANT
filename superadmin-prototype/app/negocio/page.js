@@ -10,7 +10,7 @@ const TABS = [
   { id: "productos", label: "Productos" },
   { id: "clientes", label: "Clientes" },
   { id: "pedidos", label: "Pedidos" },
-  { id: "facturacion", label: "Facturación" },
+  { id: "facturacion", label: "Finanzas" },
   { id: "seguridad", label: "Seguridad" },
   { id: "detalle", label: "Detalle" },
 ];
@@ -43,6 +43,11 @@ const statusTag = (status) => {
   const meta = ORDER_STATUS[status] || { label: status, tone: "slate" };
   return <Tag tone={meta.tone} dot>{meta.label}</Tag>;
 };
+const FINANCE_TONE = {
+  draft: "slate", issued: "indigo", partial: "amber", paid: "green",
+  open: "amber", overdue: "rose", posted: "green", reversed: "slate",
+};
+const financeTag = (status) => <Tag tone={FINANCE_TONE[status] || "slate"} dot>{status}</Tag>;
 
 async function jsonRequest(url, options = {}) {
   const res = await fetch(url, { credentials: "include", ...options });
@@ -84,6 +89,15 @@ export default function BusinessPanel() {
   const [customers, setCustomers] = useState({ customers: [], total: 0, pages: 1 });
   const [orders, setOrders] = useState({ orders: [], total: 0, pages: 1 });
   const [orderDetail, setOrderDetail] = useState(null);
+
+  // Finanzas del ERP (facturación, cartera y contabilidad)
+  const [finance, setFinance] = useState({
+    kpis: null, monthly: [], aging: [], invoices: [], journal: [], entries: [],
+    invoiceableOrders: [], receivables: [], payments: [], accounts: [],
+  });
+  const [financeForm, setFinanceForm] = useState({
+    orderId: "", partnerId: "", receivableId: "", amount: "", method: "transfer", reference: "",
+  });
 
   // Filtros y paginación
   const [productQ, setProductQ] = useState("");
@@ -137,6 +151,31 @@ export default function BusinessPanel() {
     else setError(json.error || "No se pudo cargar los pedidos");
   }, [orderQ, orderStatus, orderPage]);
 
+  const loadFinance = useCallback(async () => {
+    const [overview, payments, journal] = await Promise.all([
+      jsonRequest("/negocio/api/finance/overview"),
+      jsonRequest("/negocio/api/finance/payments"),
+      jsonRequest("/negocio/api/finance/journal"),
+    ]);
+    if (!overview.ok) return setError(overview.json.error || "No se pudo cargar el resumen financiero");
+    if (!payments.ok) return setError(payments.json.error || "No se pudo cargar la cartera");
+    if (!journal.ok) return setError(journal.json.error || "No se pudo cargar el libro contable");
+    setFinance((prev) => ({
+      ...prev,
+      kpis: overview.json.kpis,
+      monthly: overview.json.monthly || [],
+      aging: overview.json.aging || [],
+      invoices: overview.json.invoices || [],
+      journal: overview.json.journal || [],
+      invoiceableOrders: overview.json.invoiceableOrders || [],
+      receivables: payments.json.receivables || [],
+      payments: payments.json.payments || [],
+      entries: journal.json.entries || [],
+      accounts: journal.json.accounts || [],
+    }));
+    setError("");
+  }, []);
+
   async function load() {
     const { ok, status, json } = await jsonRequest("/negocio/api/me");
     if (ok) {
@@ -157,11 +196,12 @@ export default function BusinessPanel() {
 
   useEffect(() => {
     if (view !== "panel") return;
-    if (tab === "resumen" || tab === "facturacion") loadOverview();
+    if (tab === "resumen") loadOverview();
+    if (tab === "facturacion") loadFinance();
     if (tab === "productos") loadProducts();
     if (tab === "clientes") loadCustomers();
     if (tab === "pedidos") loadOrders();
-  }, [view, tab, loadOverview, loadProducts, loadCustomers, loadOrders]);
+  }, [view, tab, loadOverview, loadFinance, loadProducts, loadCustomers, loadOrders]);
 
   useEffect(() => {
     if (!notice) return;
@@ -362,6 +402,45 @@ export default function BusinessPanel() {
       loadOrders();
       loadOverview();
       setNotice(`Pedido ${json.order.number} creado por ${money(json.order.total)}`);
+    });
+  }
+
+  async function issueInvoice() {
+    if (!financeForm.orderId) return setError("Selecciona un pedido confirmado o entregado");
+    await mutate("/negocio/api/finance/invoices", "POST", { orderId: financeForm.orderId }, (json) => {
+      setFinanceForm((prev) => ({ ...prev, orderId: "" }));
+      loadFinance();
+      loadOverview();
+      setNotice(`Factura ${json.invoice.number} emitida · asiento ${json.invoice.journal_number}`);
+    });
+  }
+
+  async function submitPayment(event) {
+    event.preventDefault();
+    const amount = Number(financeForm.amount);
+    if (!financeForm.partnerId || !amount) return setError("Selecciona una cuenta por cobrar");
+    const allocations = financeForm.receivableId
+      ? [{ receivableId: financeForm.receivableId, amount }]
+      : [];
+    await mutate("/negocio/api/finance/payments", "POST", {
+      partnerId: financeForm.partnerId,
+      amount,
+      method: financeForm.method,
+      reference: financeForm.reference,
+      allocations,
+    }, (json) => {
+      setFinanceForm((prev) => ({ ...prev, receivableId: "", partnerId: "", amount: "", reference: "" }));
+      loadFinance();
+      setNotice(`Pago ${json.payment.number} registrado · asiento ${json.payment.journal_number}`);
+    });
+  }
+
+  async function switchTenant(event) {
+    const selected = (data.tenants || []).find((row) => row.tenant_key === event.target.value);
+    if (!selected) return;
+    await mutate("/negocio/api/switch", "POST", { tenantId: selected.tenant_id }, () => {
+      load();
+      setNotice(`Ahora trabajas en ${selected.tenant_name}`);
     });
   }
 
@@ -585,24 +664,132 @@ export default function BusinessPanel() {
         <Pager page={orders.page || 1} pages={orders.pages || 1} total={orders.total} onChange={setOrderPage} />
       </Panel>}
 
-      {/* ── Facturación ─────────────────────────────────────────────────── */}
+      {/* ── Finanzas ────────────────────────────────────────────────────── */}
       {tab === "facturacion" && <>
-        <div className="stat-grid" style={{ gridTemplateColumns: "repeat(3,1fr)" }}>
-          <Stat label="Facturación por pedidos" value={compact(kpis.sales)} icon="↗" tone="green" />
-          <Stat label="Facturas de servicio" value={(overview?.invoices || []).length} icon="▤" />
-          <Stat label="Inventario al costo" value={compact(kpis.inventory_value)} icon="▣" tone="amber" />
+        <div className="stat-grid" style={{ gridTemplateColumns: "repeat(4,1fr)" }}>
+          <Stat label="Facturado" value={compact(finance.kpis?.invoiced)} icon="↗" tone="green" hint={`${finance.kpis?.open_invoices || 0} facturas pendientes`} />
+          <Stat label="Cobrado" value={compact(finance.kpis?.collected)} icon="◎" tone="indigo" />
+          <Stat label="Por cobrar" value={compact(finance.kpis?.receivable)} icon="⏱" tone="amber" />
+          <Stat label="Libro contable" value={compact(finance.kpis?.posted)} icon="▤" hint="Débito = crédito" />
         </div>
-        <Panel title="Facturas del servicio" subtitle="Suscripción y cargos de la plataforma para este negocio" bodyClass="tight">
-          <Table columns={[
+
+        <div className="chart-grid">
+          <Panel title="Facturación mensual" subtitle="Facturas operativas emitidas">
+            <Bars height={150} data={(finance.monthly || []).map((row) => ({ label: monthLabel(row.month), value: row.invoiced }))} />
+          </Panel>
+          <Panel title="Cobros mensuales" subtitle="Pagos aplicados a cartera">
+            <Bars height={150} color="#22c55e" data={(finance.monthly || []).map((row) => ({ label: monthLabel(row.month), value: row.collected }))} />
+          </Panel>
+        </div>
+
+        <div className="chart-grid">
+          <Panel title="Emitir factura" subtitle="El pedido pasa a facturado y genera su asiento balanceado">
+            <div className="filter-row">
+              <select value={financeForm.orderId} onChange={(e) => setFinanceForm((prev) => ({ ...prev, orderId: e.target.value }))} style={{ minWidth: 320 }}>
+                <option value="">Selecciona un pedido confirmado…</option>
+                {(finance.invoiceableOrders || []).map((row) => (
+                  <option key={row.id} value={row.id}>{row.number} · {row.partner} · {money(row.total)}</option>
+                ))}
+              </select>
+              <Btn tone="primary" icon="＋" onClick={issueInvoice} disabled={busy || !financeForm.orderId}>Emitir factura</Btn>
+            </div>
+            {!finance.invoiceableOrders?.length && <div className="callout" style={{ marginTop: 10 }}>No hay pedidos listos para facturar. Confirma o entrega un pedido primero.</div>}
+          </Panel>
+
+          <Panel title="Registrar pago" subtitle="Aplica a la cartera y deja su asiento en el libro único">
+            <form onSubmit={submitPayment}>
+              <Field label="Cuenta por cobrar" hint="El cliente se toma de la factura seleccionada">
+                <select value={financeForm.receivableId} onChange={(e) => {
+                  const row = (finance.receivables || []).find((item) => item.id === e.target.value);
+                  setFinanceForm((prev) => ({
+                    ...prev,
+                    receivableId: e.target.value,
+                    partnerId: row?.partner_id || "",
+                    amount: row ? String(row.balance) : "",
+                  }));
+                }}>
+                  <option value="">Selecciona una factura pendiente…</option>
+                  {(finance.receivables || []).map((row) => (
+                    <option key={row.id} value={row.id}>{row.invoice} · {row.partner} · {money(row.balance)}</option>
+                  ))}
+                </select>
+              </Field>
+              <div className="two-col">
+                <Field label="Valor del pago">
+                  <input type="number" min="0.01" step="0.01" required value={financeForm.amount}
+                    onChange={(e) => setFinanceForm((prev) => ({ ...prev, amount: e.target.value }))} />
+                </Field>
+                <Field label="Método">
+                  <select value={financeForm.method} onChange={(e) => setFinanceForm((prev) => ({ ...prev, method: e.target.value }))}>
+                    <option value="transfer">Transferencia</option>
+                    <option value="bank">Banco</option>
+                    <option value="cash">Efectivo</option>
+                    <option value="card">Tarjeta</option>
+                    <option value="pse">PSE</option>
+                  </select>
+                </Field>
+              </div>
+              <Field label="Referencia">
+                <input value={financeForm.reference} onChange={(e) => setFinanceForm((prev) => ({ ...prev, reference: e.target.value }))} placeholder="Comprobante, transacción…" />
+              </Field>
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+                <Btn tone="primary" disabled={busy || !financeForm.receivableId}>Registrar pago</Btn>
+              </div>
+            </form>
+          </Panel>
+        </div>
+
+        <Panel title="Facturas operativas" subtitle="Emitidas desde pedidos · separadas de la facturación de la plataforma" bodyClass="tight">
+          <Table compact columns={[
             { key: "number", label: "Factura", render: (row) => <span className="mono">{row.number}</span> },
-            { key: "amount", label: "Valor", align: "right", render: (row) => money(row.amount) },
-            { key: "currency", label: "Moneda" },
-            { key: "status", label: "Estado", render: (row) => <Tag tone={row.status === "paid" ? "green" : "amber"}>{row.status}</Tag> },
-            { key: "issued_at", label: "Emisión", render: (row) => dateLabel(row.issued_at) },
-          ]} rows={overview?.invoices || []} empty="Todavía no hay facturas emitidas" />
+            { key: "partner", label: "Cliente" },
+            { key: "issue_date", label: "Emisión", render: (row) => dateLabel(row.issue_date) },
+            { key: "total", label: "Total", align: "right", render: (row) => money(row.total) },
+            { key: "balance", label: "Saldo", align: "right", render: (row) => money(row.balance) },
+            { key: "status", label: "Estado", render: (row) => financeTag(row.status) },
+            { key: "journal_number", label: "Asiento", render: (row) => <span className="mono">{row.journal_number}</span> },
+          ]} rows={finance.invoices || []} empty="Todavía no hay facturas operativas" />
         </Panel>
-        <Panel title="Ingresos mensuales" subtitle="Ventas reales registradas en pedidos">
-          <Bars height={150} data={(overview?.sales || []).map((row) => ({ label: monthLabel(row.month), value: row.total }))} />
+
+        <div className="chart-grid">
+          <Panel title="Cartera pendiente" subtitle="Facturas con saldo abierto" bodyClass="tight">
+            <Table compact columns={[
+              { key: "invoice", label: "Factura", render: (row) => <span className="mono">{row.invoice}</span> },
+              { key: "partner", label: "Cliente" },
+              { key: "balance", label: "Saldo", align: "right", render: (row) => money(row.balance) },
+              { key: "due_date", label: "Vence", render: (row) => dateLabel(row.due_date) },
+              { key: "status", label: "Estado", render: (row) => financeTag(row.status) },
+            ]} rows={finance.receivables || []} empty="Cartera al día" />
+          </Panel>
+          <Panel title="Antigüedad de cartera" subtitle="Saldo por rango de días" bodyClass="tight">
+            <Table compact columns={[
+              { key: "bucket", label: "Rango" },
+              { key: "invoices", label: "Facturas", align: "right" },
+              { key: "amount", label: "Saldo", align: "right", render: (row) => money(row.amount) },
+            ]} rows={finance.aging || []} empty="Sin saldos pendientes" />
+          </Panel>
+        </div>
+
+        <Panel title="Libro contable" subtitle="Un solo libro por negocio: cada documento genera débito y crédito" bodyClass="tight">
+          <Table compact columns={[
+            { key: "number", label: "Asiento", render: (row) => <span className="mono">{row.number}</span> },
+            { key: "entry_date", label: "Fecha", render: (row) => dateLabel(row.entry_date) },
+            { key: "description", label: "Descripción" },
+            { key: "source_type", label: "Origen" },
+            { key: "total_debit", label: "Débito", align: "right", render: (row) => money(row.total_debit) },
+            { key: "status", label: "Estado", render: (row) => financeTag(row.status) },
+          ]} rows={finance.entries || []} empty="Aún no hay asientos contables" />
+        </Panel>
+
+        <Panel title="Pagos registrados" subtitle="Cobros y su aplicación a facturas" bodyClass="tight">
+          <Table compact columns={[
+            { key: "number", label: "Pago", render: (row) => <span className="mono">{row.number}</span> },
+            { key: "payment_date", label: "Fecha", render: (row) => dateLabel(row.payment_date) },
+            { key: "method", label: "Método" },
+            { key: "amount", label: "Valor", align: "right", render: (row) => money(row.amount) },
+            { key: "unapplied", label: "Sin aplicar", align: "right", render: (row) => money(row.unapplied) },
+            { key: "status", label: "Estado", render: (row) => financeTag(row.status) },
+          ]} rows={finance.payments || []} empty="Todavía no hay pagos registrados" />
         </Panel>
       </>}
 
@@ -647,6 +834,24 @@ export default function BusinessPanel() {
             <div><small>Alta</small><b>{dateLabel(tenant.created)}</b></div>
             <div><small>Equipo</small><b>{(team || []).reduce((sum, row) => sum + row.total, 0)} miembros</b></div>
           </div>
+        </Panel>
+        <Panel title="Empresa activa" subtitle="Las escrituras siempre quedan dentro del tenant seleccionado">
+          <div className="callout">
+            {tenant.id === "t17_sandbox"
+              ? "Estás en Samjuro Sandbox. Las facturas, pagos e inventario que registres aquí no afectan los datos reales."
+              : "Estás en el negocio real. Evita registrar operaciones hasta terminar la validación."}
+          </div>
+          {(data.tenants || []).length > 1 && (
+            <Field label="Cambiar de empresa" hint="La sesión se vuelve a firmar con la empresa elegida">
+              <select value={tenant.id} onChange={switchTenant} disabled={busy}>
+                {(data.tenants || []).map((row) => (
+                  <option key={row.tenant_id} value={row.tenant_key}>
+                    {row.tenant_name} · {row.role}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
         </Panel>
         <div className="chart-grid">
           <Panel title="Módulos activos" subtitle="Incluidos en tuplan">
