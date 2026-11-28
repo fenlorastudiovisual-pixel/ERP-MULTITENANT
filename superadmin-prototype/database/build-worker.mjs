@@ -8,6 +8,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, renameSync } from "node:fs";
 import { join } from "node:path";
+import "./patch-opennext-windows.mjs";
 
 const root = process.cwd();
 const envFiles = [

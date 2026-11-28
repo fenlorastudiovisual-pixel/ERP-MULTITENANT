@@ -76,7 +76,9 @@ La pestaña **Productos** tiene un botón **Precio** que actualiza el ERP y deja
 npm run db:samjuro-sync   # crea samjuro_item_map y samjuro_price_sync en Neon
 ```
 
-El endpoint `POST /negocio/api/samjuro/sync-prices` solo ejecuta `UPDATE` sobre `presentaciones.precio` o `productos.precio_referencia`, por `id` de fila, en lotes de 50 y con auditoría. No hay `DELETE`, `TRUNCATE`, DDL ni acceso a pedidos. La credencial se lee del secreto `SUPABASE_WRITE_URL` (nunca se versiona); sin ese secreto el endpoint devuelve 503 y **no escribe nada**. El SQL para crear el rol `erp_writer` está en `superadmin-prototype/database/samjuro-writer-role.sql` y debe ejecutarse en la Supabase de Samjuro cambiando el marcador de contraseña en la consola, sin guardarla en Git. Antes y después de cualquier escritura se compara `SAMJURO-EXPORT/baseline-before.json` con una nueva huella para demostrar que no se borró ni se movió otra tabla.
+El endpoint `POST /negocio/api/samjuro/sync-prices` solo ejecuta `UPDATE` sobre `presentaciones.precio` o `productos.precio_referencia`, por `id` de fila, en lotes de 50 y con auditoría. No hay `DELETE`, `TRUNCATE`, DDL ni acceso a pedidos. En el Worker la conexión sale por el binding de Hyperdrive `SAMJURO_HYPERDRIVE` (Cloudflare termina TLS; evita el problema de certificados de Supabase en `cloudflare:sockets`); en Node se usa el secreto `SUPABASE_WRITE_URL`. Ninguna credencial se versiona y, sin destino, el endpoint devuelve 503 y **no escribe nada**. El SQL para crear el rol `erp_writer` está en `superadmin-prototype/database/samjuro-writer-role.sql` y debe ejecutarse en la Supabase de Samjuro cambiando el marcador de contraseña en la consola, sin guardarla en Git.
+
+**Verificación final (2026-11-27, Worker `26e77480-b6e2-4c8a-84a6-73c8c08f6f35`):** la prueba con `CH-ESM-208` y `CH-ESM-208-P1` terminó con `synced: 2`, `failed: 0`. `CH-ESM-208-P1` quedó en `5190.00`. `CH-ESM-208` tenía `precio_referencia = null`; la prueba escribió `5190` y se restauró a `null` inmediatamente con el mismo rol restringido. La huella posterior (`SAMJURO-EXPORT/baseline-post-sync.json`) coincide con `baseline-pre-sync.json` en conteos y datos salvo `productos.updated_at` y dos filas nuevas en `presentaciones_historial`, ambas producidas por los triggers de auditoría del `UPDATE`. Pedidos, ítems, vendedoras, panel de acceso y catálogo siguen intactos.
 
 ```bash
 cd superadmin-prototype
@@ -108,6 +110,8 @@ cd superadmin-prototype
 npm run cf:login
 npx wrangler secret put DATABASE_URL
 npx wrangler secret put SUPERADMIN_KEY
+# La credencial de escritura de Samjuro no se sube como texto plano al repositorio:
+# npx wrangler hyperdrive create samjuro-writer --connection-string <cadena-secreta> --caching-disabled
 npm run deploy
 ```
 

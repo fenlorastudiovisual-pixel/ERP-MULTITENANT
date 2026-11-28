@@ -1,16 +1,37 @@
 // Sincroniza SOLO los cambios de precio pendientes del piloto hacia la Supabase de Samjuro.
 // Reglas: sin DELETE, sin TRUNCATE, sin DDL; una sola columna por tabla; lote máximo 50.
-// La credencial de escritura se lee de SUPABASE_WRITE_URL (secreto; nunca se versiona).
+// En el Worker se usa Hyperdrive (binding cifrado y pool); fuera de Worker,
+// SUPABASE_WRITE_URL como secreto de entorno. Ninguna credencial se versiona.
 
 import { NextResponse } from "next/server";
-import { neon } from "@neondatabase/serverless";
+import pg from "pg";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { dbEnabled, runAsTenant } from "../../../../../lib/db";
 import { resolveBusinessContext } from "../../../../../lib/tenant-context";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+const { Client } = pg;
 const MAX_BATCH = 50;
+
+const onWorkers = () =>
+  typeof navigator !== "undefined" && navigator.userAgent === "Cloudflare-Workers";
+
+function writeTarget() {
+  if (onWorkers()) {
+    try {
+      const { env } = getCloudflareContext();
+      const url = env.SAMJURO_HYPERDRIVE?.connectionString;
+      // Hyperdrive termina TLS hacia Supabase; el cliente habla TCP local sin TLS.
+      return url ? { url, ssl: false, source: "hyperdrive" } : null;
+    } catch {
+      return null;
+    }
+  }
+  const url = process.env.SUPABASE_WRITE_URL;
+  return url ? { url, ssl: { rejectUnauthorized: false }, source: "env" } : null;
+}
 const TARGETS = {
   presentaciones: { column: "precio" },
   productos: { column: "precio_referencia" },
@@ -47,7 +68,7 @@ export async function GET(request) {
     return NextResponse.json({
       changes: rows[0],
       summary: Object.fromEntries(rows[1].map((r) => [r.status, r.total])),
-      configured: Boolean(process.env.SUPABASE_WRITE_URL),
+      configured: Boolean(writeTarget()),
       targets: TARGETS,
     });
   } catch (error) {
@@ -81,67 +102,82 @@ export async function POST(request) {
     const result = { pending: pending.length, processed: 0, synced: 0, failed: 0, errors: [], dryRun };
     if (dryRun || !pending.length) return NextResponse.json(result);
 
-    const writeUrl = process.env.SUPABASE_WRITE_URL;
-    if (!writeUrl) {
+    const target = writeTarget();
+    if (!target) {
       return NextResponse.json({
         ...result,
-        error: "SUPABASE_WRITE_URL no está configurada: no se escribió nada en Supabase",
+        error: "No hay destino de escritura configurado: no se escribió nada en Supabase",
       }, { status: 503 });
     }
-    const supa = neon(writeUrl, { fetchConnectionCache: true });
+    let client;
+    try {
+      client = new Client({
+        connectionString: target.url,
+        ssl: target.ssl,
+        connectionTimeoutMillis: 15000,
+      });
+      await client.connect();
+    } catch (error) {
+      return NextResponse.json({
+        ...result,
+        error: `No se pudo conectar a Supabase: ${safeError(error)}`,
+      }, { status: 503 });
+    }
 
-    for (const change of pending) {
-      const target = TARGETS[change.source_table];
-      const column = TARGETS[change.source_table]?.column;
-      if (!target || column !== change.column_name || !/^[0-9a-f-]{36}$/.test(change.source_row_id)) {
-        await runAsTenant(tenantId, (tx) => tx`
-          update public.samjuro_price_sync
-          set status = 'failed', attempts = attempts + 1,
-              last_error = 'Destino no permitido', synced_at = null
-          where tenant_id = ${tenantId}::uuid and id = ${change.id}::uuid
-        `, ctx.role, ctx.identity.user_id);
-        result.failed += 1;
-        result.errors.push({ sku: change.sku, error: "Destino no permitido" });
-        continue;
-      }
+    try {
+      for (const change of pending) {
+        const target = TARGETS[change.source_table];
+        const column = target?.column;
+        if (!target || column !== change.column_name || !/^[0-9a-f-]{36}$/.test(change.source_row_id)) {
+          await runAsTenant(tenantId, (tx) => tx`
+            update public.samjuro_price_sync
+            set status = 'failed', attempts = attempts + 1,
+                last_error = 'Destino no permitido', synced_at = null
+            where tenant_id = ${tenantId}::uuid and id = ${change.id}::uuid
+          `, ctx.role, ctx.identity.user_id);
+          result.failed += 1;
+          result.errors.push({ sku: change.sku, error: "Destino no permitido" });
+          continue;
+        }
 
-      result.processed += 1;
-      try {
-        // SQL fijo por whitelist: ningún valor del cliente se usa como identificador.
-        const statement = `update public.${change.source_table} set ${column} = $1 where id = $2::uuid returning id`;
-        await supa.transaction(async (tx) => {
-          const updated = await tx.query(statement, [change.new_price, change.source_row_id]);
+        result.processed += 1;
+        try {
+          // SQL fijo por whitelist: ningún valor del cliente se usa como identificador.
+          const statement = `update public.${change.source_table} set ${column} = $1 where id = $2::uuid returning id`;
+          const updated = await client.query(statement, [change.new_price, change.source_row_id]);
           if (!updated.rows.length) throw new Error("No se encontró la fila destino en Supabase");
-        });
 
-        await runAsTenant(tenantId, (tx) => tx`
-          update public.samjuro_price_sync
-          set status = 'synced', attempts = attempts + 1,
-              last_error = null, synced_at = now()
-          where tenant_id = ${tenantId}::uuid and id = ${change.id}::uuid
-        `, ctx.role, ctx.identity.user_id);
+          await runAsTenant(tenantId, (tx) => tx`
+            update public.samjuro_price_sync
+            set status = 'synced', attempts = attempts + 1,
+                last_error = null, synced_at = now()
+            where tenant_id = ${tenantId}::uuid and id = ${change.id}::uuid
+          `, ctx.role, ctx.identity.user_id);
 
-        await runAsTenant(tenantId, (tx) => tx`
-          insert into public.audit_log
-            (tenant_id, actor_role, action, object_type, object_id, reason, metadata)
-          values
-            (${tenantId}::uuid, ${ctx.role}, 'samjuro_price_synced', 'item', ${change.sku},
-             'Precio sincronizado a la Supabase de Samjuro (solo columna autorizada)',
-             jsonb_build_object('table', ${change.source_table}, 'column', ${column},
-                                'price', ${change.new_price}, 'row_id', ${change.source_row_id}))
-        `, ctx.role, ctx.identity.user_id);
-        result.synced += 1;
-      } catch (error) {
-        const message = safeError(error);
-        await runAsTenant(tenantId, (tx) => tx`
-          update public.samjuro_price_sync
-          set status = 'failed', attempts = attempts + 1,
-              last_error = ${message}, synced_at = null
-          where tenant_id = ${tenantId}::uuid and id = ${change.id}::uuid
-        `, ctx.role, ctx.identity.user_id);
-        result.failed += 1;
-        result.errors.push({ sku: change.sku, error: message });
+          await runAsTenant(tenantId, (tx) => tx`
+            insert into public.audit_log
+              (tenant_id, actor_role, action, object_type, object_id, reason, metadata)
+            values
+              (${tenantId}::uuid, ${ctx.role}::text, 'samjuro_price_synced', 'item', ${change.sku}::text,
+               'Precio sincronizado a la Supabase de Samjuro (solo columna autorizada)',
+               jsonb_build_object('table', ${change.source_table}::text, 'column', ${column}::text,
+                                  'price', ${change.new_price}::numeric, 'row_id', ${change.source_row_id}::text))
+          `, ctx.role, ctx.identity.user_id);
+          result.synced += 1;
+        } catch (error) {
+          const message = safeError(error);
+          await runAsTenant(tenantId, (tx) => tx`
+            update public.samjuro_price_sync
+            set status = 'failed', attempts = attempts + 1,
+                last_error = ${message}, synced_at = null
+            where tenant_id = ${tenantId}::uuid and id = ${change.id}::uuid
+          `, ctx.role, ctx.identity.user_id);
+          result.failed += 1;
+          result.errors.push({ sku: change.sku, error: message });
+        }
       }
+    } finally {
+      try { await client.end(); } catch {}
     }
     return NextResponse.json(result);
   } catch (error) {

@@ -10,5 +10,12 @@
   },
   "observability": {
     "enabled": true
-  }
+  },
+  "hyperdrive": [
+    {
+      "binding": "SAMJURO_HYPERDRIVE",
+      "id": "60ae12b8243146dd972a903b6c3bd6b3",
+      "localConnectionString": "postgresql://erp_writer:__LOCAL_PLACEHOLDER__@127.0.0.1:5432/postgres"
+    }
+  ]
 }
