@@ -283,6 +283,46 @@ export const OBJECTS = Object.freeze({
     permissions: { viewer: ["read"], admin: ["read", "create"] },
   }),
 
+  budget: object({
+    name: "budget",
+    table: "erp_budgets",
+    label: "Presupuesto EPM",
+    fields: ["id", "tenant_id", "entity_id", "code", "name", "period", "currency", "dimensions", "status"],
+    required: ["tenant_id", "code", "name", "period"],
+    unique: [["tenant_id", "code", "period"]],
+    permissions: { viewer: ["read"], manager: ["read"], admin: ["read", "create", "update", "approve"] },
+  }),
+
+  budgetLine: object({
+    name: "budgetLine",
+    table: "erp_budget_lines",
+    label: "Línea de presupuesto",
+    fields: ["tenant_id", "budget_id", "line_no", "account", "dimensions", "amount_minor"],
+    required: ["tenant_id", "budget_id", "line_no", "account"],
+    unique: [["tenant_id", "budget_id", "line_no"]],
+    permissions: { viewer: ["read"], admin: ["read", "create", "update"] },
+  }),
+
+  cashPosition: object({
+    name: "cashPosition",
+    table: "erp_cash_positions",
+    label: "Posición de tesorería",
+    fields: ["id", "tenant_id", "entity_id", "position_date", "currency", "opening_minor", "inflow_minor", "outflow_minor", "closing_minor", "movements"],
+    required: ["tenant_id", "entity_id", "position_date"],
+    unique: [["tenant_id", "entity_id", "position_date", "currency"]],
+    permissions: { viewer: ["read"], manager: ["read"], admin: ["read", "create", "update"] },
+  }),
+
+  forecast: object({
+    name: "forecast",
+    table: "erp_forecasts",
+    label: "Previsión EPM",
+    fields: ["id", "tenant_id", "entity_id", "period", "currency", "method", "amount_minor", "basis"],
+    required: ["tenant_id", "entity_id", "period", "method"],
+    unique: [["tenant_id", "entity_id", "period", "currency", "method"]],
+    permissions: { viewer: ["read"], manager: ["read"], admin: ["read", "create", "update"] },
+  }),
+
   party: object({
     name: "party",
     table: "partners",

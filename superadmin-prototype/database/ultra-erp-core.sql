@@ -527,6 +527,61 @@ create table if not exists public.erp_agent_traces (
   unique (tenant_id, run_id, step)
 );
 
+-- ── EPM y tesorería (Fase 3A) ───────────────────────────────────────────────
+-- Importes SIEMPRE en unidades menores. COP/CLP usan 0 decimales.
+create table if not exists public.erp_budgets (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  entity_id uuid references public.erp_entities(id) on delete cascade,
+  code text not null,
+  name text not null,
+  period text not null check (period ~ '^\d{4}-(0[1-9]|1[0-2])$'),
+  currency char(3) not null default 'COP',
+  dimensions jsonb not null default '{}'::jsonb,
+  status text not null default 'draft' check (status in ('draft','approved','closed')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (tenant_id, code, period)
+);
+
+create table if not exists public.erp_budget_lines (
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  budget_id uuid not null references public.erp_budgets(id) on delete cascade,
+  line_no integer not null,
+  account text not null,
+  dimensions jsonb not null default '{}'::jsonb,
+  amount_minor bigint not null,
+  primary key (tenant_id, budget_id, line_no)
+);
+
+create table if not exists public.erp_cash_positions (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  entity_id uuid not null references public.erp_entities(id) on delete cascade,
+  position_date date not null,
+  currency char(3) not null default 'COP',
+  opening_minor bigint not null default 0,
+  inflow_minor bigint not null default 0,
+  outflow_minor bigint not null default 0,
+  closing_minor bigint not null default 0,
+  movements jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  unique (tenant_id, entity_id, position_date, currency)
+);
+
+create table if not exists public.erp_forecasts (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  entity_id uuid not null references public.erp_entities(id) on delete cascade,
+  period text not null check (period ~ '^\d{4}-(0[1-9]|1[0-2])$'),
+  currency char(3) not null default 'COP',
+  method text not null check (method in ('budget','recent_average')),
+  amount_minor bigint not null,
+  basis text not null,
+  created_at timestamptz not null default now(),
+  unique (tenant_id, entity_id, period, currency, method)
+);
+
 -- ── Auditoría inmutable con hash-chain ───────────────────────────────────────
 create sequence if not exists public.erp_audit_events_seq;
 
@@ -617,6 +672,10 @@ drop trigger if exists erp_agent_runs_touch on public.erp_agent_runs;
 create trigger erp_agent_runs_touch before update on public.erp_agent_runs
   for each row execute function public.touch_updated_at();
 
+drop trigger if exists erp_budgets_touch on public.erp_budgets;
+create trigger erp_budgets_touch before update on public.erp_budgets
+  for each row execute function public.touch_updated_at();
+
 -- ── RLS ──────────────────────────────────────────────────────────────────────
 -- erp_policies y tablas de control usan solo aislamiento por tenant para
 -- evitar recursión en erp_has_permission().
@@ -676,7 +735,11 @@ begin
       ('public.erp_tool_allowlists', 'toolAllowlist'),
       ('public.erp_agent_runs', 'agentRun'),
       ('public.erp_approval_gates', 'approvalGate'),
-      ('public.erp_agent_traces', 'agentTrace')
+      ('public.erp_agent_traces', 'agentTrace'),
+      ('public.erp_budgets', 'budget'),
+      ('public.erp_budget_lines', 'budgetLine'),
+      ('public.erp_cash_positions', 'cashPosition'),
+      ('public.erp_forecasts', 'forecast')
     ) as t(table_name, object_name)
   loop
     execute format('alter table %s enable row level security', item.table_name);

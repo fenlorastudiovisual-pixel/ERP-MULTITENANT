@@ -12,3 +12,5 @@ export * from "./observability.js";
 export * from "./agents.js";
 export * from "./accounting-service.js";
 export * from "./workflow-definitions.js";
+export * from "./epm.js";
+export * from "./epm-service.js";

@@ -2,7 +2,7 @@
 
 Este documento materializa la combinación decidida tras revisar ERPNext/Frappe, Huly, NocoBase e IDurar, contrastada con el benchmark 2026 de ERPs enterprise (SAP, Oracle Fusion, NetSuite, Dynamics 365, Workday, Infor, IFS).
 
-**Estado actual: P0 + Fase 2 aplicados y verificados en la BD del ERP.** `npm test` → 58/58 pruebas en verde; `npm run build` → correcto (incluye las 4 rutas `/negocio/api/ultra/*`). Se aplicaron `ultra-erp-core.sql` (84 sentencias en una transacción) y `seed-ultra-config.sql` (1 entidad, 2 libros, 4 reglas, 1 grupo, 1 miembro, permisos RLS). La BD de **Samjuro no se tocó**.
+**Estado actual: P0 + Fase 2 + Fase 3A (EPM) aplicados y verificados en la BD del ERP.** `npm test` → 69/69 pruebas en verde; `npm run build` → correcto (5 rutas `/negocio/api/ultra/*`). Se aplicaron `ultra-erp-core.sql` (90 sentencias en una transacción; 29 tablas base + 4 de EPM) y `seed-ultra-config.sql` (1 entidad, 2 libros, 4 reglas, 1 grupo, 1 miembro, permisos RLS ampliados a los objetos EPM). Worker desplegado en la versión `16577602-a810-476f-846c-d69053b8d3f3`. La BD de **Samjuro no se tocó**.
 
 ## Principios arquitectónicos (ADR)
 
@@ -32,8 +32,8 @@ Este documento materializa la combinación decidida tras revisar ERPNext/Frappe,
 | `lib/ultra/observability.js` | `trace_id`/`span_id`, redacción de secretos en contexto y evaluación de SLO. |
 | `lib/ultra/agents.js` | Definición de agente, allowlist de herramientas, gate humano, ejecución y traza. |
 | `lib/ultra/index.js` | Barrel único de los módulos anteriores. |
-| `database/ultra-erp-core.sql` | Migración aditiva **no aplicada**: control plane, libros, FX, consolidación, intercompany, event envelope, feature flags, agentes y hash-chain. |
-| `lib/ultra/*.test.mjs` | 48 pruebas unitarias sin bases de datos ni dependencias nuevas. |
+| `database/ultra-erp-core.sql` | Migración aditiva aplicada: control plane, libros, FX, consolidación, intercompany, event envelope, feature flags, agentes, hash-chain y tablas EPM. |
+| `lib/ultra/*.test.mjs` | 69 pruebas unitarias sin bases de datos ni dependencias nuevas. |
 
 ## Brechas cerradas frente al benchmark
 
@@ -68,7 +68,7 @@ La migración SQL **ya se aplicó en la BD del ERP** (verificada: 29 tablas `erp
 .\node_modules\.bin\dotenvx.cmd run -f .env.local -- node database/apply-ultra-seed.mjs --confirm=ULTRA-SEED
 ```
 
-Node no carga `.env.local` automáticamente; por eso se usa `dotenvx`. El migrador usa el protocolo Postgres completo (`pg`) porque el endpoint HTTP de Neon no persiste DDL multi-sentencia; `database/split-sql.mjs` separa las 84 sentencias respetando comentarios, comillas y bloques `$$`. Todo se ejecuta en una sola transacción. El SQL no contiene `DELETE`, `TRUNCATE` ni `DROP TABLE`: solo `CREATE IF NOT EXISTS`, `ALTER ... ADD COLUMN`, `DROP/CREATE POLICY`, `DROP/CREATE TRIGGER`, constraints condicionales y el trigger de hash-chain de auditoría.
+Node no carga `.env.local` automáticamente; por eso se usa `dotenvx`. El migrador usa el protocolo Postgres completo (`pg`) porque el endpoint HTTP de Neon no persiste DDL multi-sentencia; `database/split-sql.mjs` separa las 90 sentencias respetando comentarios, comillas y bloques `$$`. Todo se ejecuta en una sola transacción. El SQL no contiene `DELETE`, `TRUNCATE` ni `DROP TABLE`: solo `CREATE IF NOT EXISTS`, `ALTER ... ADD COLUMN`, `DROP/CREATE POLICY`, `DROP/CREATE TRIGGER`, constraints condicionales y el trigger de hash-chain de auditoría.
 
 ## Verificación de P0
 
@@ -90,7 +90,7 @@ npm run build  # compile + typecheck + 6 páginas estáticas OK
 | `app/negocio/api/ultra/postings/route.js` | `GET`: asientos derivados. `POST`: deriva desde un asiento operativo publicado; `dryRun` calcula sin escribir. Requiere `finance.view` / `journal.post`. |
 | `app/negocio/api/ultra/consolidations/route.js` | `GET`: grupos/miembros. `POST`: consolidación con vigencia, FX, eliminaciones y NCI. Solo lectura. Requiere `finance.view`. |
 | `app/negocio/api/ultra/workflows/route.js` | `GET`: ejecuciones debidas y definiciones. `POST`: `start/advance/resume/run_due` sobre el registro permitido. Requiere `journal.post`. |
-| `database/seed-ultra-config.sql` | Configuración mínima **no aplicada**: entidad `Samjuro`, libros `local`/`group` en COP, 4 reglas y grupo `SAMJURO`. Sin tasas ni importes inventados. |
+| `database/seed-ultra-config.sql` | Configuración mínima aplicada: entidad `Samjuro`, libros `local`/`group` en COP, 4 reglas y grupo `SAMJURO`. Sin tasas ni importes inventados. |
 | `lib/ultra/accounting-service.test.mjs` y `workflow-definitions.test.mjs` | 7 pruebas nuevas sin base de datos. |
 
 ### Endpoints
@@ -135,17 +135,62 @@ npm run build  # compile + typecheck + 4 rutas /ultra/* en el manifiesto
 
 Durante la validación se corrigieron tres defectos reales: el migrador multi-sentencia con Neon HTTP, la falta de unicidad `(tenant_id, id)` en `erp_workflow_instances` y el formato del resultado de idempotencia devuelto por el store Postgres.
 
+## Fase 3A — EPM y tesorería (aplicada)
+
+| Archivo | Qué hace |
+|---|---|
+| `lib/ultra/epm.js` | Motores puros: presupuestos por dimensión, comparación en unidades menores, posición de caja y previsión (`budget` / `recent_average`). Rechaza comparar monedas distintas sin tasas reales. |
+| `lib/ultra/epm-service.js` | Persistencia en `erp_budgets`, `erp_budget_lines`, `erp_cash_positions` y `erp_forecasts`. Lee los reales solo del libro `group`. `runner` inyectable e importación diferida de `db.js`. |
+| `app/negocio/api/ultra/epm/route.js` | `GET` con `finance.view` y `POST` con `journal.post` para `budget`, `cash` y `forecast`. El tenant siempre viene de la sesión. |
+| `lib/ultra/metadata.js` y `database/ultra-erp-core.sql` | Cuatro objetos nuevos con RLS forzado, trigger `touch_updated_at` y reglas en `erp_policies`. |
+| `lib/ultra/epm.test.mjs` y `lib/ultra/epm-service.test.mjs` | 11 pruebas nuevas sin base de datos. |
+
+### Endpoints EPM
+
+| Método y ruta | Resultado |
+|---|---|
+| `GET /negocio/api/ultra/epm?view=budgets` | Presupuestos con sus líneas hidratadas desde unidades menores. |
+| `GET /negocio/api/ultra/epm?view=comparison&budgetId=<uuid>&dimensions=<json>` | Presupuesto vs. asientos derivados del libro `group` en el periodo; filtra por dimensión. |
+| `GET /negocio/api/ultra/epm?view=cash` / `?view=forecast` | Posiciones de caja y previsiones guardadas. |
+| `POST /negocio/api/ultra/epm` | `{ "action": "budget", ... }`, `{ "action": "cash", ... }` o `{ "action": "forecast", ... }`. Requiere `journal.post` y audita la escritura. |
+
+### Reglas de dinero
+
+- Importes persistidos **siempre en unidades menores**; COP/CLP sin decimales.
+- `defineBudget` guarda unidades mayores ya normalizadas y `compareBudget` convierte una sola vez: USD no duplica escala.
+- **No se inventa FX**: comparar un presupuesto en moneda distinta a la de reporte falla con un mensaje explícito.
+- La comparación usa únicamente el libro `group`, nunca el libro local, para no duplicar importes.
+- Re-guardar un presupuesto usa el `id` real devuelto por `ON CONFLICT` antes de insertar las líneas: evita violación de FK y conserva la idempotencia.
+
+### Validación en BD real (ya ejecutada)
+
+- Reales de noviembre del asiento derivado: 3 líneas, débito/crédito `$ 1.744.108`.
+- Presupuesto `PT-2026-11-SAMJURO`, creado con esas cuentas y dimensiones reales: comparación con **3 filas y desviación 0**; re-guardado idempotente con el mismo id.
+- Caja al 2026-11-30: entradas `$ 1.744.108`, salidas `$ 1.744.108`, cierre `0`. Reintento sin duplicados.
+- Previsión: método `recent_average`, periodos `2026-12` y `2027-01`, 2 filas. Reintento sin duplicados.
+- RLS real: el rol `sales` ve **0** presupuestos; `owner` ve los permitidos.
+- El presupuesto de debug `PT-DEBUG` se eliminó al terminar; quedó solo el presupuesto derivado de datos reales.
+
+Durante la validación se corrigieron seis defectos: expectativa de desviación mal calculada en un test, doble conversión de escala en USD, importación de `fromMinor` desde el módulo equivocado, FK rota al re-guardar presupuestos, `budget.id=null` sobrescribiendo el id devuelto por la BD y `method=null` al guardar previsiones.
+
+### Qué sigue y qué falta en Fase 3
+
+- **Sigue:** Fase 3B (ESG) y la UI mínima del Ultra ERP sobre las cinco APIs.
+- **Falta:** métricas ESG con fuente de datos real; datos de holding multi-entidad y tasas FX reales para probar consolidación y comparación en otra moneda (no se inventan).
+
 ## Fases siguientes
 
-1. ~~**Fase 1 — Seed de metadatos.**~~ Código listo en P0; pendiente de aplicar en BD.
-2. ~~**Fase 2 — API de contabilidad derivada.**~~ Código listo; pendiente de migración, seed y prueba en entorno de pruebas.
-3. **Fase 3 — ESG/EPM y tesorería.** Presupuestos, cash pooling, previsiones y reportes por dimensión.
+1. ~~**Fase 1 — Seed de metadatos.**~~ Aplicado en BD.
+2. ~~**Fase 2 — API de contabilidad derivada.**~~ Aplicada y verificada en BD real.
+3. ~~**Fase 3A — EPM y tesorería.**~~ Aplicada y verificada en BD real. **Falta Fase 3B (ESG).**
 4. **Fase 4 — Integraciones.** Webhooks firmados, OAuth2/OIDC/SAML, conectores y API keys con rotación.
-5. **Fase 5 — UI.** Worklists con acciones directas, object pages con anclas, comandos contextuales por rol/estado, vistas guardadas en URL y PWA/offline.
+5. **Fase 5 — UI mínima del Ultra ERP.** Worklists con acciones directas, object pages con anclas, comandos contextuales por rol/estado, vistas guardadas en URL y PWA/offline.
 
 ## Lo que NO se hizo todavía
 
 - No se modificó `SAMJURO`: la verificación previa confirmó que `DATABASE_URL` apunta al ERP (`tenants`/`role_permissions` sí; `pedidos`/`vendedoras` no).
 - Sí se aplicó DDL aditivo a la BD del ERP, con confirmación explícita y en una transacción.
 - No se tocó `pedidos`, `pedido_items`, `vendedoras`, `panel_acceso`, `auth.users` ni secretos.
-- Worker desplegado después de la validación: versión `f06ee300-41c4-4003-a91d-ab45731ddb03`. Las cuatro rutas `/negocio/api/ultra/*` existen en producción y responden `401` sin sesión, igual que el resto del panel.
+- Worker desplegado después de la validación EPM: versión `16577602-a810-476f-846c-d69053b8d3f3` (anterior: `f06ee300-…`). Las cinco rutas `/negocio/api/ultra/*` existen en producción y responden `401` sin sesión en ambos dominios, igual que el resto del panel.
+- Todavía no hay UI para estas APIs: solo se consumen por HTTP con sesión válida.
+- No se probó consolidación multi-entidad ni FX real: faltan entidades y fuente de tasas; no se inventan.

@@ -74,7 +74,8 @@ cross join (values
   ('intercompanyPair'), ('intercompanyTransaction'), ('eliminationRule'),
   ('eliminationEntry'), ('eventEnvelope'), ('eventDelivery'), ('deadLetter'),
   ('featureFlag'), ('agentDefinition'), ('toolAllowlist'), ('agentRun'),
-  ('approvalGate'), ('agentTrace')
+  ('approvalGate'), ('agentTrace'),
+  ('budget'), ('budgetLine'), ('cashPosition'), ('forecast')
 ) as o(object_name)
 cross join (values ('read'), ('create'), ('update'), ('delete'), ('approve'), ('execute')) as a(action)
 on conflict (tenant_id, role, permission) do update set allowed = excluded.allowed;
