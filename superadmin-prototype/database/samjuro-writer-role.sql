@@ -3,6 +3,13 @@
 -- Importante: este archivo NO contiene contraseñas. Reemplaza el marcador en tu consola;
 -- nunca guardes la connection string ni la contraseña en el repositorio.
 
+-- Diagnóstico previo (solo lectura). Si erp_writer_superuser = true, detente:
+-- ese rol no se puede alterar desde el SQL Editor de Supabase y hay que crearlo
+-- con otro nombre (erp_writer2) o desde un cliente con supabase_admin.
+-- select current_user::text as usuario,
+--        (select rolsuper from pg_roles where rolname = current_user) as soy_superusuario,
+--        (select rolsuper from pg_roles where rolname = 'erp_writer') as erp_writer_superusuario;
+
 -- 1) Rol sin privilegios de borrado, sin creación de roles/bases y sin DDL de tablas.
 do $$
 begin
@@ -13,8 +20,9 @@ end
 $$;
 
 alter role erp_writer with password 'REEMPLAZAR_CON_PASSWORD_SEGURO';
-alter role erp_writer nosuperuser nocreaterole nocreatedb noinherit;
--- noinherit evita heredar privilegios amplios del rol public.
+-- No incluir NOSUPERUSER/NOCREATEROLE/NOCREATEDB/NOINHERIT: en Supabase el SQL Editor
+-- corre con postgres (no superusuario) y ese ALTER ROLE falla con 42501.
+-- CREATE ROLE sin esas opciones ya crea un rol ordinario sin esos atributos.
 
 -- 2) Quitar cualquier privilegio previo sobre tablas del esquema public.
 revoke all on all tables in schema public from erp_writer;
