@@ -126,6 +126,9 @@ export default function BusinessPanel() {
   });
   const [purchaseLines, setPurchaseLines] = useState([]);
   const [margins, setMargins] = useState({ kpis: null, byItem: [], byOrder: [], ivaRate: 19 });
+  const [priceTarget, setPriceTarget] = useState(null);
+  const [priceForm, setPriceForm] = useState({ price: "" });
+  const [priceSync, setPriceSync] = useState({ changes: [], summary: {}, configured: false });
   const [countModal, setCountModal] = useState(false);
   const [countWarehouse, setCountWarehouse] = useState("");
   const [countRows, setCountRows] = useState([]);
@@ -237,6 +240,13 @@ export default function BusinessPanel() {
     setError("");
   }, []);
 
+  const loadPriceSync = useCallback(async () => {
+    const { ok, json } = await jsonRequest("/negocio/api/samjuro/sync-prices");
+    if (!ok) return setError(json.error || "No se pudo cargar la sincronización de precios");
+    setPriceSync(json);
+    setError("");
+  }, []);
+
   async function load() {
     const { ok, status, json } = await jsonRequest("/negocio/api/me");
     if (ok) {
@@ -261,11 +271,11 @@ export default function BusinessPanel() {
     if (tab === "facturacion") loadFinance();
     if (tab === "inventario") loadInventory();
     if (tab === "compras") { loadPurchases(); loadInventory(); }
-    if (tab === "utilidades") { loadMargins(); loadInventory(); }
-    if (tab === "productos") loadProducts();
+    if (tab === "utilidades") { loadMargins(); loadInventory(); loadPriceSync(); }
+    if (tab === "productos") { loadProducts(); loadPriceSync(); }
     if (tab === "clientes") loadCustomers();
     if (tab === "pedidos") loadOrders();
-  }, [view, tab, loadOverview, loadFinance, loadInventory, loadPurchases, loadMargins, loadProducts, loadCustomers, loadOrders]);
+  }, [view, tab, loadOverview, loadFinance, loadInventory, loadPurchases, loadMargins, loadPriceSync, loadProducts, loadCustomers, loadOrders]);
 
   useEffect(() => {
     if (!notice) return;
@@ -418,6 +428,32 @@ export default function BusinessPanel() {
       loadOverview();
       setNotice(row.active ? "Producto desactivado" : "Producto activado");
     });
+  }
+
+  async function submitPrice(event) {
+    event.preventDefault();
+    const ok = await mutate("/negocio/api/products", "PATCH", {
+      id: priceTarget.id, action: "price", price: Number(priceForm.price),
+    }, (json) => {
+      setModal(null);
+      setPriceTarget(null);
+      setPriceForm({ price: "" });
+      loadProducts();
+      loadPriceSync();
+      setNotice(json.product?.pending_sync
+        ? "Precio actualizado en el ERP; pendiente de sincronizar con Samjuro"
+        : "Precio actualizado en el ERP");
+    });
+    if (!ok) setError("No se pudo actualizar el precio");
+  }
+
+  async function syncPrices() {
+    const ok = await mutate("/negocio/api/samjuro/sync-prices", "POST", {}, (json) => {
+      loadPriceSync();
+      if (json.error) setError(json.error);
+      else setNotice(`${json.synced || 0} precios sincronizados · ${json.failed || 0} con error`);
+    });
+    if (!ok) setError("No se pudo sincronizar con Supabase");
   }
 
   async function openOrderModal() {
@@ -775,6 +811,7 @@ export default function BusinessPanel() {
           { key: "stock", label: "Stock", align: "right", render: (row) => <Tag tone={row.stock <= row.min_stock ? "amber" : "green"}>{row.stock} / mín. {row.min_stock}</Tag> },
           { key: "active", label: "Estado", render: (row) => <Tag tone={row.active ? "green" : "slate"}>{row.active ? "Activo" : "Inactivo"}</Tag> },
           { key: "actions", label: "", align: "right", render: (row) => <div style={{ display: "flex", gap: 5, justifyContent: "flex-end" }}>
+            <Btn size="xs" onClick={() => { setPriceTarget(row); setPriceForm({ price: String(row.price ?? "") }); setModal("price"); }}>Precio</Btn>
             <Btn size="xs" onClick={() => { setStockTarget(row); setModal("stock"); }}>Ajustar</Btn>
             <Btn size="xs" onClick={() => toggleProduct(row)}>{row.active ? "Desactivar" : "Activar"}</Btn>
           </div> },
@@ -1190,6 +1227,31 @@ export default function BusinessPanel() {
           <Stat label="Utilidad bruta" value={money0(margins.kpis?.grossProfit)} icon="◎" tone="green" hint={`${Number(margins.kpis?.marginPct || 0).toFixed(1)}% sobre venta neta`} />
         </div>
 
+        <Panel
+          title="Sincronización de precios con Samjuro"
+          subtitle="Solo escribe el precio autorizado en la fila correspondiente de Supabase"
+          actions={<Btn tone="primary" icon="↗" disabled={busy} onClick={syncPrices}>Sincronizar precios</Btn>}
+          bodyClass="tight">
+          <div className="stat-grid" style={{ gridTemplateColumns: "repeat(3,1fr)" }}>
+            <Stat label="Pendientes" value={Number(priceSync.summary?.pending || 0)} icon="◷" tone="amber" />
+            <Stat label="Sincronizados" value={Number(priceSync.summary?.synced || 0)} icon="✓" tone="green" />
+            <Stat label="Con error" value={Number(priceSync.summary?.failed || 0)} icon="!" tone="rose" />
+          </div>
+          <p style={{ color: "#8b93a1", fontSize: 12, padding: "12px 16px 0" }}>
+            {priceSync.configured
+              ? "Escritura habilitada: se actualizan únicamente presentaciones.precio y productos.precio_referencia. Nunca se borra nada ni se tocan pedidos."
+              : "La credencial de escritura aún no está configurada. Puedes editar precios en Productos; los cambios quedarán pendientes y no se escribirá nada en Supabase."}
+          </p>
+          <Table compact columns={[
+            { key: "sku", label: "SKU", render: (row) => <span className="mono">{row.sku}</span> },
+            { key: "change", label: "Cambio", render: (row) => `${money(row.old_price)} → ${money(row.new_price)}` },
+            { key: "target", label: "Destino", render: (row) => `${row.source_table}.${row.column_name}` },
+            { key: "status", label: "Estado", render: (row) => <Tag tone={{ pending: "amber", synced: "green", failed: "rose" }[row.status] || "slate"}>{row.status}</Tag> },
+            { key: "attempts", label: "Intentos", align: "right" },
+            { key: "last_error", label: "Detalle", render: (row) => row.last_error || dateLabel(row.synced_at) },
+          ]} rows={priceSync.changes || []} empty="No hay cambios de precio registrados" />
+        </Panel>
+
         <Panel title="Cómo se calcula la utilidad" subtitle="El IVA no es ganancia: se resta antes de calcular el margen">
           <div className="kv">
             <div><span>Precio final al cliente</span><strong>{money0(margins.byItem?.[0]?.sale_price)}</strong></div>
@@ -1348,6 +1410,21 @@ export default function BusinessPanel() {
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
             <Btn onClick={() => setModal(null)}>Cancelar</Btn><Btn tone="primary" disabled={busy}>Registrar movimiento</Btn>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal open={modal === "price"} onClose={() => setModal(null)} title="Editar precio" subtitle={priceTarget ? `${priceTarget.sku} · ${priceTarget.name}` : ""}>
+        <form onSubmit={submitPrice}>
+          <div className="two-col">
+            <Field label="Precio actual en el ERP"><input readOnly value={money(priceTarget?.price)} /></Field>
+            <Field label="Nuevo precio (IVA incluido)"><input required type="number" min="1" step="0.01" value={priceForm.price} onChange={(e) => setPriceForm({ ...priceForm, price: e.target.value })} /></Field>
+          </div>
+          <p style={{ color: "#8b93a1", fontSize: 12, marginTop: 10 }}>
+            Samjuro maneja precios con IVA incluido. El cambio queda registrado en el ERP y se aplica a Supabase solo cuando presiones «Sincronizar precios» en Utilidades. No se tocan pedidos ni otras columnas del catálogo.
+          </p>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <Btn onClick={() => setModal(null)}>Cancelar</Btn><Btn tone="primary" disabled={busy}>Guardar precio</Btn>
           </div>
         </form>
       </Modal>

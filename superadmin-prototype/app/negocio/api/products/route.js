@@ -275,6 +275,65 @@ export async function PATCH(request) {
       return NextResponse.json({ product: rows[0] });
     }
 
+    if (body.action === "price") {
+      const price = number(body.price, -1);
+      if (!Number.isFinite(price) || price <= 0 || price > 1000000000) {
+        return NextResponse.json({ error: "Escribe un precio válido entre 1 y 1.000.000.000" }, { status: 400 });
+      }
+      const rows = await runAsTenant(tenantId, (tx) => tx`
+        with prod as (
+          select id, sku, name, price as old_price
+          from public.products
+          where tenant_id = ${tenantId}::uuid and id = ${id}::uuid
+        ),
+        map as (
+          select source_table, source_row_id, source_sku, column_name
+          from public.samjuro_item_map
+          where tenant_id = ${tenantId}::uuid and item_id = ${id}::uuid
+        ),
+        updated_product as (
+          update public.products set price = ${price}, updated_at = now()
+          where tenant_id = ${tenantId}::uuid and id = ${id}::uuid
+          returning id
+        ),
+        updated_item as (
+          update public.items set sale_price = ${price}, updated_at = now()
+          where tenant_id = ${tenantId}::uuid and id = ${id}::uuid
+          returning id
+        ),
+        pending as (
+          insert into public.samjuro_price_sync
+            (tenant_id, item_id, sku, source_table, source_row_id, column_name,
+             old_price, new_price, requested_by)
+          select ${tenantId}::uuid, prod.id,
+                 coalesce(nullif(map.source_sku, ''), prod.sku),
+                 map.source_table, map.source_row_id, map.column_name,
+                 prod.old_price, ${price}, ${ctx.identity.user_id || null}::uuid
+          from prod
+          join map on map.source_table is not null and map.source_row_id is not null
+          on conflict (tenant_id, item_id, source_row_id) do update set
+            sku = excluded.sku,
+            source_table = excluded.source_table,
+            column_name = excluded.column_name,
+            old_price = excluded.old_price,
+            new_price = excluded.new_price,
+            status = 'pending',
+            attempts = 0,
+            last_error = null,
+            created_at = now(),
+            synced_at = null,
+            requested_by = excluded.requested_by
+          returning id
+        )
+        select prod.id::text as id, prod.sku, prod.name,
+               ${price}::float as price, prod.old_price::float as old_price,
+               (select count(*)::int from pending) as pending_sync
+        from prod
+      `, ctx.role, ctx.identity.user_id);
+      if (!rows.length) return NextResponse.json({ error: "Producto no encontrado" }, { status: 404 });
+      return NextResponse.json({ product: rows[0] });
+    }
+
     return NextResponse.json({ error: "Acción no soportada" }, { status: 400 });
   } catch (error) {
     return NextResponse.json({ error: error?.message || String(error) }, { status: 500 });

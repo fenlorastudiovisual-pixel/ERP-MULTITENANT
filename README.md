@@ -68,6 +68,16 @@ El script no contiene credenciales: toma `DATABASE_URL` de `.env.local`. La fuen
 
 Las **103 cotizaciones** y sus **56 abonos** ya están mapeados al libro operativo: se importan como documentos `COT-…` en `invoices_ops`, con su cartera, sus pagos `PA-COT-…`, sus asientos balanceados y la antigüedad de cartera. Total cotizado `$75.537.734`, abonado `$36.174.078` y saldo `$39.363.656`. Los 2 productos marcados como agotados en Supabase quedaron señalados en el catálogo sin desactivarlos.
 
+### Edición de precios → Supabase (activable con rol restringido)
+
+La pestaña **Productos** tiene un botón **Precio** que actualiza el ERP y deja el cambio en `samjuro_price_sync`. En **Utilidades → Sincronización de precios con Samjuro** se revisan y aplican los pendientes. El mapeo ítem→fila real se reconstruye con:
+
+```bash
+npm run db:samjuro-sync   # crea samjuro_item_map y samjuro_price_sync en Neon
+```
+
+El endpoint `POST /negocio/api/samjuro/sync-prices` solo ejecuta `UPDATE` sobre `presentaciones.precio` o `productos.precio_referencia`, por `id` de fila, en lotes de 50 y con auditoría. No hay `DELETE`, `TRUNCATE`, DDL ni acceso a pedidos. La credencial se lee del secreto `SUPABASE_WRITE_URL` (nunca se versiona); sin ese secreto el endpoint devuelve 503 y **no escribe nada**. El SQL para crear el rol `erp_writer` está en `superadmin-prototype/database/samjuro-writer-role.sql` y debe ejecutarse en la Supabase de Samjuro cambiando el marcador de contraseña en la consola, sin guardarla en Git. Antes y después de cualquier escritura se compara `SAMJURO-EXPORT/baseline-before.json` con una nueva huella para demostrar que no se borró ni se movió otra tabla.
+
 ```bash
 cd superadmin-prototype
 npm run db:erp-core       # migración aditiva: 48 tablas con RLS forzado

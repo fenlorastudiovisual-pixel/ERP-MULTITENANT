@@ -14,6 +14,7 @@
     "db:verify-phase3": "node database/verify-phase3.mjs",
     "db:import-samjuro": "node database/import-samjuro.mjs",
     "db:import-samjuro-extras": "node database/import-samjuro-extras.mjs",
+    "db:samjuro-sync": "node database/migrate-samjuro-sync.mjs",
     "db:seed-ops": "node database/seed-tenant-ops.mjs",
     "db:check": "node database/check.mjs",
     "db:inspect": "node database/inspect.mjs",
