@@ -2,7 +2,7 @@
 
 Este documento materializa la combinación decidida tras revisar ERPNext/Frappe, Huly, NocoBase e IDurar, contrastada con el benchmark 2026 de ERPs enterprise (SAP, Oracle Fusion, NetSuite, Dynamics 365, Workday, Infor, IFS).
 
-**Estado actual: P0 + Fase 2 + Fase 3A (EPM) aplicados y verificados en la BD del ERP.** `npm test` → 69/69 pruebas en verde; `npm run build` → correcto (5 rutas `/negocio/api/ultra/*`). Se aplicaron `ultra-erp-core.sql` (90 sentencias en una transacción; 29 tablas base + 4 de EPM) y `seed-ultra-config.sql` (1 entidad, 2 libros, 4 reglas, 1 grupo, 1 miembro, permisos RLS ampliados a los objetos EPM). Worker desplegado en la versión `16577602-a810-476f-846c-d69053b8d3f3`. La BD de **Samjuro no se tocó**.
+**Estado actual: P0 + Fase 2 + Fase 3A (EPM) aplicados y verificados en la BD del ERP.** `npm test` → 69/69 pruebas en verde; `npm run build` → correcto (5 rutas `/negocio/api/ultra/*`). Se aplicaron `ultra-erp-core.sql` (90 sentencias en una transacción; 29 tablas base + 4 de EPM) y `seed-ultra-config.sql` (1 entidad, 2 libros, 4 reglas, 1 grupo, 1 miembro, permisos RLS ampliados a los objetos EPM). Worker desplegado en la versión `c798a156-dd58-43df-8f5a-15367c2a4009`, con UI mínima del Ultra ERP. La BD de **Samjuro no se tocó**.
 
 ## Principios arquitectónicos (ADR)
 
@@ -184,13 +184,27 @@ Durante la validación se corrigieron seis defectos: expectativa de desviación 
 2. ~~**Fase 2 — API de contabilidad derivada.**~~ Aplicada y verificada en BD real.
 3. ~~**Fase 3A — EPM y tesorería.**~~ Aplicada y verificada en BD real. **Falta Fase 3B (ESG).**
 4. **Fase 4 — Integraciones.** Webhooks firmados, OAuth2/OIDC/SAML, conectores y API keys con rotación.
-5. **Fase 5 — UI mínima del Ultra ERP.** Worklists con acciones directas, object pages con anclas, comandos contextuales por rol/estado, vistas guardadas en URL y PWA/offline.
+5. ~~**Fase 5 — UI mínima del Ultra ERP.**~~ Pestaña `Ultra ERP` desplegada con cinco subsecciones. **Falta** PWA/offline, vistas guardadas en URL y comandos contextuales avanzados.
+
+## UI mínima del Ultra ERP
+
+La pestaña **Ultra ERP** de `app/negocio/page.js` consume las cinco APIs con la sesión del panel y usa los mismos componentes (`Panel`, `Stat`, `Table`, `Field`, `Tabs`) que el resto del ERP:
+
+| Subsección | Qué permite |
+|---|---|
+| Libros y reglas | Ver libros paralelos, moneda, libro base, reglas de derivación, grupos y miembros. |
+| Asientos derivados | Simular un plan (`dryRun`) y contabilizarlo; listar asientos por libro con débito/crédito. |
+| Consolidación | Elegir grupo y fecha de corte, calcular y ver líneas que deben cuadrar. |
+| Workflows | Ver definiciones allowlisted, iniciar un cierre idempotente y avanzar con eventos permitidos. |
+| EPM y caja | Guardar presupuestos, comparar contra el libro `group`, registrar caja y calcular previsiones. |
+
+`npm test` → 69/69; `npm run build` → correcto; Worker en versión `c798a156-dd58-43df-8f5a-15367c2a4009`.
 
 ## Lo que NO se hizo todavía
 
 - No se modificó `SAMJURO`: la verificación previa confirmó que `DATABASE_URL` apunta al ERP (`tenants`/`role_permissions` sí; `pedidos`/`vendedoras` no).
 - Sí se aplicó DDL aditivo a la BD del ERP, con confirmación explícita y en una transacción.
 - No se tocó `pedidos`, `pedido_items`, `vendedoras`, `panel_acceso`, `auth.users` ni secretos.
-- Worker desplegado después de la validación EPM: versión `16577602-a810-476f-846c-d69053b8d3f3` (anterior: `f06ee300-…`). Las cinco rutas `/negocio/api/ultra/*` existen en producción y responden `401` sin sesión en ambos dominios, igual que el resto del panel.
-- Todavía no hay UI para estas APIs: solo se consumen por HTTP con sesión válida.
+- Worker desplegado después de la validación EPM y la UI: versión `c798a156-dd58-43df-8f5a-15367c2a4009` (anteriores: `16577602-…`, `f06ee300-…`). Las cinco rutas `/negocio/api/ultra/*` existen en producción y responden `401` sin sesión en ambos dominios; `/negocio` responde `200`.
+- La UI solo muestra y escribe dentro del tenant de la sesión: no hay selector de tenant del Ultra ERP ni formularios de tasas FX.
 - No se probó consolidación multi-entidad ni FX real: faltan entidades y fuente de tasas; no se inventan.

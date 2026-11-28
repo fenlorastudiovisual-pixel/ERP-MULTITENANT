@@ -13,11 +13,20 @@ const TABS = [
   { id: "pedidos", label: "Pedidos" },
   { id: "cotizaciones", label: "Cotizar" },
   { id: "facturacion", label: "Finanzas" },
+  { id: "ultra", label: "Ultra ERP" },
   { id: "inventario", label: "Inventario" },
   { id: "compras", label: "Compras" },
   { id: "utilidades", label: "Utilidades" },
   { id: "seguridad", label: "Seguridad" },
   { id: "detalle", label: "Detalle" },
+];
+
+const ULTRA_SECTIONS = [
+  { id: "config", label: "Libros y reglas" },
+  { id: "postings", label: "Asientos derivados" },
+  { id: "consolidation", label: "Consolidación" },
+  { id: "workflows", label: "Workflows" },
+  { id: "epm", label: "EPM y caja" },
 ];
 
 const ORDER_STATUS = {
@@ -134,6 +143,20 @@ export default function BusinessPanel() {
   const [countModal, setCountModal] = useState(false);
   const [countWarehouse, setCountWarehouse] = useState("");
   const [countRows, setCountRows] = useState([]);
+
+  // Ultra ERP: cinco APIs gobernadas, mismas reglas de tenant que el resto.
+  const [ultra, setUltra] = useState({
+    config: null, entries: [], groups: [], members: [], workflows: null,
+    budgets: [], cash: [], forecasts: [], plan: null, comparison: null, consolidation: null,
+  });
+  const [ultraSection, setUltraSection] = useState("config");
+  const [ultraForm, setUltraForm] = useState({
+    sourceId: "", groupCode: "SAMJURO", date: "2026-11-30",
+    entityId: "", instanceId: "", event: "submit",
+    budgetCode: "", budgetName: "", period: "2026-11", account: "4135", amount: "",
+    budgetId: "", dimensions: "{}", cashDate: "2026-11-30", cashDirection: "in", cashAmount: "",
+    forecastPeriod: "2026-11", forecastAmount: "", forecastPeriods: "2",
+  });
 
   // Filtros y paginación
   const [productQ, setProductQ] = useState("");
@@ -264,6 +287,33 @@ export default function BusinessPanel() {
     setError("");
   }, []);
 
+  const loadUltra = useCallback(async () => {
+    const requests = await Promise.all([
+      jsonRequest("/negocio/api/ultra/ledgers"),
+      jsonRequest("/negocio/api/ultra/postings?limit=60"),
+      jsonRequest("/negocio/api/ultra/consolidations"),
+      jsonRequest("/negocio/api/ultra/workflows"),
+      jsonRequest("/negocio/api/ultra/epm?view=budgets"),
+      jsonRequest("/negocio/api/ultra/epm?view=cash"),
+      jsonRequest("/negocio/api/ultra/epm?view=forecast"),
+    ]);
+    const failed = requests.find((result) => !result.ok);
+    if (failed) setError(failed.json.error || "No se pudo cargar el Ultra ERP");
+    const [ledgers, postings, groups, workflows, budgets, cash, forecasts] = requests;
+    setUltra((prev) => ({
+      ...prev,
+      config: ledgers.ok ? ledgers.json : null,
+      entries: postings.ok ? postings.json.entries || [] : [],
+      groups: groups.ok ? groups.json.groups || [] : [],
+      members: groups.ok ? groups.json.members || [] : [],
+      workflows: workflows.ok ? workflows.json : null,
+      budgets: budgets.ok ? budgets.json.budgets || [] : [],
+      cash: cash.ok ? cash.json.positions || [] : [],
+      forecasts: forecasts.ok ? forecasts.json.forecasts || [] : [],
+    }));
+    if (!failed) setError("");
+  }, []);
+
   const loadQuotes = useCallback(async () => {
     const { ok, json } = await jsonRequest("/negocio/api/quotes");
     if (ok) setQuotes(json.quotes || []);
@@ -297,6 +347,7 @@ export default function BusinessPanel() {
     if (view !== "panel") return;
     if (tab === "resumen") loadOverview();
     if (tab === "facturacion") loadFinance();
+    if (tab === "ultra") loadUltra();
     if (tab === "inventario") loadInventory();
     if (tab === "compras") { loadPurchases(); loadInventory(); }
     if (tab === "utilidades") { loadMargins(); loadInventory(); loadPriceSync(); }
@@ -304,7 +355,7 @@ export default function BusinessPanel() {
     if (tab === "clientes") loadCustomers();
     if (tab === "pedidos") loadOrders();
     if (tab === "cotizaciones") { loadQuotes(); loadQuoteCustomers(); }
-  }, [view, tab, loadOverview, loadFinance, loadInventory, loadPurchases, loadMargins, loadPriceSync, loadProducts, loadCustomers, loadOrders, loadQuotes, loadQuoteCustomers]);
+  }, [view, tab, loadOverview, loadFinance, loadUltra, loadInventory, loadPurchases, loadMargins, loadPriceSync, loadProducts, loadCustomers, loadOrders, loadQuotes, loadQuoteCustomers]);
 
   useEffect(() => {
     if (!notice) return;
@@ -783,6 +834,119 @@ export default function BusinessPanel() {
     await mutate("/negocio/api/switch", "POST", { tenantId: selected.tenant_id }, () => {
       load();
       setNotice(`Ahora trabajas en ${selected.tenant_name}`);
+    });
+  }
+
+  function setUltraValue(key, value) {
+    setUltraForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  async function deriveUltra(dryRun) {
+    await mutate("/negocio/api/ultra/postings", "POST", {
+      sourceId: ultraForm.sourceId.trim(), dryRun, rateType: "closing",
+    }, (json) => {
+      if (dryRun) {
+        setUltra((prev) => ({ ...prev, plan: json.plan || null }));
+        setNotice(`Plan simulado: ${(json.plan?.entries || []).length} asientos`);
+      } else {
+        setUltra((prev) => ({ ...prev, plan: null }));
+        setNotice(`Se derivaron ${(json.inserted || []).length} asientos`);
+        loadUltra();
+      }
+    });
+  }
+
+  async function consolidateUltra() {
+    await mutate("/negocio/api/ultra/consolidations", "POST", {
+      groupCode: ultraForm.groupCode.trim(), date: ultraForm.date, rateType: "closing",
+    }, (json) => {
+      setUltra((prev) => ({ ...prev, consolidation: json }));
+      setNotice(`Consolidado ${json.group?.code || ultraForm.groupCode}`);
+    });
+  }
+
+  async function startUltraWorkflow() {
+    await mutate("/negocio/api/ultra/workflows", "POST", {
+      action: "start",
+      entityType: "closing",
+      entityId: ultraForm.entityId.trim(),
+      context: { date: ultraForm.date },
+      idempotencyKey: `ui-close-${ultraForm.date}`,
+    }, (json) => {
+      setNotice(`Cierre iniciado: ${json.instanceId || "idempotente"}`);
+      loadUltra();
+    });
+  }
+
+  async function advanceUltraWorkflow() {
+    await mutate("/negocio/api/ultra/workflows", "POST", {
+      action: "advance", instanceId: ultraForm.instanceId.trim(), event: ultraForm.event,
+    }, () => {
+      setNotice("Transición aplicada");
+      loadUltra();
+    });
+  }
+
+  async function saveUltraBudget() {
+    await mutate("/negocio/api/ultra/epm", "POST", {
+      action: "budget",
+      code: ultraForm.budgetCode.trim(),
+      name: ultraForm.budgetName.trim(),
+      period: ultraForm.period,
+      currency: "COP",
+      lines: [{
+        account: ultraForm.account.trim(),
+        amount: Number(ultraForm.amount) || 0,
+        dimensions: {},
+      }],
+    }, () => {
+      setNotice("Presupuesto guardado");
+      loadUltra();
+    });
+  }
+
+  async function compareUltraBudget() {
+    const query = new URLSearchParams({
+      view: "comparison",
+      budgetId: ultraForm.budgetId,
+      dimensions: ultraForm.dimensions || "{}",
+    });
+    const { ok, json } = await jsonRequest(`/negocio/api/ultra/epm?${query}`);
+    if (!ok) return setError(json.error || "No se pudo comparar el presupuesto");
+    setUltra((prev) => ({ ...prev, comparison: json }));
+    setError("");
+    setNotice("Comparación actualizada");
+  }
+
+  async function saveUltraCash() {
+    await mutate("/negocio/api/ultra/epm", "POST", {
+      action: "cash",
+      date: ultraForm.cashDate,
+      currency: "COP",
+      opening: 0,
+      movements: [{
+        direction: ultraForm.cashDirection,
+        amount: Number(ultraForm.cashAmount) || 0,
+      }],
+    }, () => {
+      setNotice("Posición de caja guardada");
+      loadUltra();
+    });
+  }
+
+  async function saveUltraForecast() {
+    await mutate("/negocio/api/ultra/epm", "POST", {
+      action: "forecast",
+      currency: "COP",
+      method: "auto",
+      periods: Number(ultraForm.forecastPeriods) || 2,
+      actuals: [{
+        period: ultraForm.forecastPeriod,
+        amount: Number(ultraForm.forecastAmount) || 0,
+      }],
+    }, () => {
+      setNotice("Previsión guardada");
+      loadUltra();
     });
   }
 
@@ -1598,6 +1762,215 @@ export default function BusinessPanel() {
             </div>
           </Panel>
         </div>
+      </>}
+
+      {/* ── Ultra ERP ───────────────────────────────────────────────────── */}
+      {tab === "ultra" && <>
+        <div className="stat-grid" style={{ gridTemplateColumns: "repeat(4,1fr)" }}>
+          <Stat label="Libros paralelos" value={ultra.config?.ledgers?.length ?? 0} icon="▤" hint="operativo + group" />
+          <Stat label="Reglas de derivación" value={ultra.config?.rules?.length ?? 0} icon="⇄" />
+          <Stat label="Asientos derivados" value={ultra.entries.length} icon="≡" tone="green" hint="idempotentes por libro" />
+          <Stat label="Presupuestos EPM" value={ultra.budgets.length} icon="◎" tone="amber" />
+        </div>
+        <Tabs tabs={ULTRA_SECTIONS} value={ultraSection} onChange={setUltraSection} />
+
+        {ultraSection === "config" && <div className="chart-grid">
+          <Panel title="Libros del holding" subtitle="La operación se deriva; nunca se reescribe">
+            <Table compact columns={[
+              { key: "code", label: "Libro" },
+              { key: "kind", label: "Tipo" },
+              { key: "currency", label: "Moneda" },
+              { key: "is_base", label: "Base", render: (row) => row.is_base ? <Tag tone="green">Sí</Tag> : <Tag>No</Tag> },
+              { key: "status", label: "Estado", render: (row) => <Tag tone="green">{row.status}</Tag> },
+            ]} rows={ultra.config?.ledgers || []} empty="Sin libros configurados" />
+          </Panel>
+          <Panel title="Reglas y consolidación" subtitle={`${ultra.config?.rules?.length || 0} reglas · ${ultra.groups.length} grupos · ${ultra.members.length} miembros`}>
+            <div className="mini-list">
+              {(ultra.config?.rules || []).map((rule) => (
+                <li key={rule.id}><span>⇄</span><div style={{ flex: 1 }}><b>{rule.code}</b>
+                  <div style={{ color: "#8b93a1", fontSize: 10 }}>{rule.source_type} → {String(rule.ledger_id || "").slice(0, 8)}</div>
+                </div><Tag tone={rule.active ? "green" : "slate"}>{rule.active ? "activa" : "inactiva"}</Tag></li>
+              ))}
+              {!(ultra.config?.rules || []).length && <li><span>—</span>Sin reglas configuradas</li>}
+            </div>
+          </Panel>
+        </div>}
+
+        {ultraSection === "postings" && <>
+          <Panel title="Derivar asientos" subtitle="Simula primero; la escritura es idempotente por tenant, fuente y libro">
+            <div className="two-col">
+              <Field label="ID del asiento operativo publicado" hint="Copia el id desde el libro contable de Finanzas">
+                <input value={ultraForm.sourceId} onChange={(e) => setUltraValue("sourceId", e.target.value)} placeholder="UUID del asiento" />
+              </Field>
+              <Field label="Tipo de tasa" hint="Se elige por fecha; sin tasas reales no se inventa FX">
+                <input value="closing" readOnly />
+              </Field>
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <Btn disabled={busy || !ultraForm.sourceId.trim()} onClick={() => deriveUltra(true)}>Simular plan</Btn>
+              <Btn tone="primary" disabled={busy || !ultraForm.sourceId.trim()} onClick={() => deriveUltra(false)}>Contabilizar en todos los libros</Btn>
+            </div>
+            {ultra.plan && <div className="callout" style={{ marginTop: 12 }}>
+              Plan simulado: {(ultra.plan.entries || []).map((entry) => `${entry.ledger_code} ${money(entry.total_debit)}`).join(" · ") || "sin asientos"}
+            </div>}
+          </Panel>
+          <Panel title="Asientos derivados" subtitle="Un asiento operativo, una versión por libro" bodyClass="tight"
+            actions={<Btn size="xs" onClick={loadUltra}>Actualizar</Btn>}>
+            <Table compact columns={[
+              { key: "ledger_code", label: "Libro" },
+              { key: "entry_date", label: "Fecha", render: (row) => dateLabel(row.entry_date) },
+              { key: "source_type", label: "Fuente" },
+              { key: "total_debit", label: "Débito", align: "right", render: (row) => money(row.total_debit) },
+              { key: "total_credit", label: "Crédito", align: "right", render: (row) => money(row.total_credit) },
+              { key: "status", label: "Estado", render: (row) => <Tag tone="green">{row.status}</Tag> },
+            ]} rows={ultra.entries} empty="Aún no hay asientos derivados" />
+          </Panel>
+        </>}
+
+        {ultraSection === "consolidation" && <>
+          <Panel title="Consolidar el grupo" subtitle="Solo se leen asientos del libro group; las tasas se toman de la configuración real">
+            <div className="two-col">
+              <Field label="Grupo">
+                <select value={ultraForm.groupCode} onChange={(e) => setUltraValue("groupCode", e.target.value)}>
+                  {(ultra.groups.length ? ultra.groups.map((group) => group.code) : ["SAMJURO"]).map((code) => (
+                    <option key={code} value={code}>{code}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Fecha de corte"><input type="date" value={ultraForm.date} onChange={(e) => setUltraValue("date", e.target.value)} /></Field>
+            </div>
+            <div style={{ marginTop: 12 }}><Btn tone="primary" disabled={busy} onClick={consolidateUltra}>Calcular consolidación</Btn></div>
+            {ultra.consolidation?.report && <div className="stat-grid" style={{ gridTemplateColumns: "repeat(3,1fr)", marginTop: 12 }}>
+              <Stat label="Moneda" value={ultra.consolidation.report.currency} icon="¤" />
+              <Stat label="Débito" value={money(ultra.consolidation.report.lines.reduce((sum, line) => sum + Number(line.debit || 0), 0))} icon="↔" tone="green" />
+              <Stat label="Crédito" value={money(ultra.consolidation.report.lines.reduce((sum, line) => sum + Number(line.credit || 0), 0))} icon="↔" tone="amber" />
+            </div>}
+          </Panel>
+          <Panel title="Líneas consolidadas" subtitle="Debe cuadrar débito = crédito" bodyClass="tight">
+            <Table compact columns={[
+              { key: "account", label: "Cuenta" },
+              { key: "debit", label: "Débito", align: "right", render: (row) => money(row.debit) },
+              { key: "credit", label: "Crédito", align: "right", render: (row) => money(row.credit) },
+            ]} rows={ultra.consolidation?.report?.lines || []} empty="Calcula una consolidación para ver las líneas" />
+          </Panel>
+        </>}
+
+        {ultraSection === "workflows" && <>
+          <Panel title="Definiciones permitidas" subtitle="Solo definiciones y eventos registrados en el servidor">
+            <div className="mini-list">
+              {(ultra.workflows?.definitions || []).map((definition) => (
+                <li key={definition.key}><span>▤</span><div style={{ flex: 1 }}><b>{definition.key}</b>
+                  <div style={{ color: "#8b93a1", fontSize: 10 }}>{definition.states.join(" → ")}</div>
+                </div><Tag tone="indigo">{definition.events.join(", ")}</Tag></li>
+              ))}
+            </div>
+          </Panel>
+          <Panel title="Cierre gobernado" subtitle="El rol decide qué transiciones se permiten; posted es terminal">
+            <div className="two-col">
+              <Field label="ID de entidad o consolidación"><input value={ultraForm.entityId} onChange={(e) => setUltraValue("entityId", e.target.value)} placeholder="UUID" /></Field>
+              <Field label="Fecha del cierre"><input type="date" value={ultraForm.date} onChange={(e) => setUltraValue("date", e.target.value)} /></Field>
+            </div>
+            <Btn tone="primary" style={{ marginTop: 12 }} disabled={busy || !ultraForm.entityId.trim()} onClick={startUltraWorkflow}>Iniciar cierre</Btn>
+            <div className="two-col" style={{ marginTop: 14 }}>
+              <Field label="ID de instancia"><input value={ultraForm.instanceId} onChange={(e) => setUltraValue("instanceId", e.target.value)} placeholder="UUID de la instancia" /></Field>
+              <Field label="Evento">
+                <select value={ultraForm.event} onChange={(e) => setUltraValue("event", e.target.value)}>
+                  {(ultra.workflows?.definitions?.[0]?.events || ["submit", "approve", "reject"]).map((event) => (
+                    <option key={event} value={event}>{event}</option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+            <Btn style={{ marginTop: 12 }} disabled={busy || !ultraForm.instanceId.trim()} onClick={advanceUltraWorkflow}>Aplicar transición</Btn>
+          </Panel>
+          <Panel title="Instancias pendientes" subtitle="Devueltas por el store con RLS del tenant" bodyClass="tight">
+            <Table compact columns={[
+              { key: "id", label: "Instancia", render: (row) => String(row.id || "").slice(0, 8) },
+              { key: "entity_type", label: "Entidad" },
+              { key: "status", label: "Estado", render: (row) => <Tag tone={row.status === "posted" ? "green" : "amber"} dot>{row.status}</Tag> },
+              { key: "due_at", label: "Vencimiento", render: (row) => dateLabel(row.due_at) },
+            ]} rows={ultra.workflows?.due || []} empty="No hay cierres pendientes" />
+          </Panel>
+        </>}
+
+        {ultraSection === "epm" && <>
+          <div className="chart-grid">
+            <Panel title="Presupuestos EPM" subtitle="Importes en unidades reales; persistidos en unidades menores" bodyClass="tight">
+              <Table compact columns={[
+                { key: "code", label: "Código" },
+                { key: "period", label: "Periodo" },
+                { key: "currency", label: "Moneda" },
+                { key: "lines", label: "Líneas", align: "right", render: (row) => (row.lines || []).length },
+                { key: "status", label: "Estado", render: (row) => <Tag tone="indigo">{row.status}</Tag> },
+              ]} rows={ultra.budgets} empty="Sin presupuestos guardados" />
+            </Panel>
+            <Panel title="Presupuesto vs. real" subtitle="Compara contra los asientos derivados del libro group">
+              <div className="two-col">
+                <Field label="Presupuesto">
+                  <select value={ultraForm.budgetId} onChange={(e) => setUltraValue("budgetId", e.target.value)}>
+                    <option value="">Selecciona…</option>
+                    {ultra.budgets.map((budget) => <option key={budget.id} value={budget.id}>{budget.code} · {budget.period}</option>)}
+                  </select>
+                </Field>
+                <Field label="Dimensiones (JSON)"><input value={ultraForm.dimensions} onChange={(e) => setUltraValue("dimensions", e.target.value)} placeholder='{"cost_center":"VENTAS"}' /></Field>
+              </div>
+              <div style={{ marginTop: 12 }}><Btn tone="primary" disabled={busy || !ultraForm.budgetId} onClick={compareUltraBudget}>Comparar</Btn></div>
+              {ultra.comparison && <div className="callout" style={{ marginTop: 12 }}>
+                {ultra.comparison.rows.length} filas · presupuesto {money(ultra.comparison.totals.budget)} · real {money(ultra.comparison.totals.actual)} · desviación {money(ultra.comparison.totals.variance)}
+              </div>}
+            </Panel>
+          </div>
+          <div className="chart-grid">
+            <Panel title="Nuevo presupuesto" subtitle="Una línea de ejemplo; sin FX, la moneda debe coincidir con el real">
+              <div className="two-col">
+                <Field label="Código"><input value={ultraForm.budgetCode} onChange={(e) => setUltraValue("budgetCode", e.target.value)} placeholder="PT-2026-12" /></Field>
+                <Field label="Nombre"><input value={ultraForm.budgetName} onChange={(e) => setUltraValue("budgetName", e.target.value)} placeholder="Presupuesto diciembre" /></Field>
+              </div>
+              <div className="three-col" style={{ marginTop: 10 }}>
+                <Field label="Periodo"><input value={ultraForm.period} onChange={(e) => setUltraValue("period", e.target.value)} placeholder="YYYY-MM" /></Field>
+                <Field label="Cuenta"><input value={ultraForm.account} onChange={(e) => setUltraValue("account", e.target.value)} /></Field>
+                <Field label="Importe"><input type="number" step="0.01" value={ultraForm.amount} onChange={(e) => setUltraValue("amount", e.target.value)} /></Field>
+              </div>
+              <div style={{ marginTop: 12 }}><Btn disabled={busy || !ultraForm.budgetCode.trim() || !ultraForm.budgetName.trim()} onClick={saveUltraBudget}>Guardar presupuesto</Btn></div>
+            </Panel>
+            <Panel title="Posición de caja" subtitle="Apertura + entradas − salidas = cierre; sin datos inventados" bodyClass="tight"
+              actions={<Btn size="xs" disabled={busy || !ultraForm.cashAmount} onClick={saveUltraCash}>Guardar</Btn>}>
+              <div className="three-col">
+                <Field label="Fecha"><input type="date" value={ultraForm.cashDate} onChange={(e) => setUltraValue("cashDate", e.target.value)} /></Field>
+                <Field label="Movimiento">
+                  <select value={ultraForm.cashDirection} onChange={(e) => setUltraValue("cashDirection", e.target.value)}>
+                    <option value="in">Entrada</option><option value="out">Salida</option>
+                  </select>
+                </Field>
+                <Field label="Importe"><input type="number" step="0.01" value={ultraForm.cashAmount} onChange={(e) => setUltraValue("cashAmount", e.target.value)} /></Field>
+              </div>
+              <div style={{ marginTop: 10 }}>
+                <Table compact columns={[
+                  { key: "position_date", label: "Fecha" },
+                  { key: "inflow", label: "Entradas", align: "right", render: (row) => money(row.inflow) },
+                  { key: "outflow", label: "Salidas", align: "right", render: (row) => money(row.outflow) },
+                  { key: "closing", label: "Cierre", align: "right", render: (row) => money(row.closing) },
+                ]} rows={ultra.cash} empty="Sin posiciones guardadas" />
+              </div>
+            </Panel>
+          </div>
+          <Panel title="Previsiones" subtitle="Sin estacionalidad inventada: presupuesto o promedio reciente" bodyClass="tight"
+            actions={<Btn size="xs" disabled={busy || !ultraForm.forecastAmount} onClick={saveUltraForecast}>Calcular y guardar</Btn>}>
+            <div className="three-col">
+              <Field label="Periodo real"><input value={ultraForm.forecastPeriod} onChange={(e) => setUltraValue("forecastPeriod", e.target.value)} placeholder="YYYY-MM" /></Field>
+              <Field label="Importe real"><input type="number" step="0.01" value={ultraForm.forecastAmount} onChange={(e) => setUltraValue("forecastAmount", e.target.value)} /></Field>
+              <Field label="Periodos a prever"><input type="number" min="1" max="12" value={ultraForm.forecastPeriods} onChange={(e) => setUltraValue("forecastPeriods", e.target.value)} /></Field>
+            </div>
+            <div style={{ marginTop: 10 }}>
+              <Table compact columns={[
+                { key: "period", label: "Periodo" },
+                { key: "method", label: "Método", render: (row) => <Tag tone="indigo">{row.method}</Tag> },
+                { key: "amount", label: "Importe", align: "right", render: (row) => money(row.amount) },
+                { key: "basis", label: "Base" },
+              ]} rows={ultra.forecasts} empty="Sin previsiones guardadas" />
+            </div>
+          </Panel>
+        </>}
       </>}
 
       {/* ── Modales ─────────────────────────────────────────────────────── */}
