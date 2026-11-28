@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev -p 8790",
     "build": "next build",
-    "test": "node --test lib/ultra/metadata.test.mjs lib/ultra/entities.test.mjs lib/ultra/money.test.mjs lib/ultra/workflow.test.mjs",
+    "test": "node --test lib/ultra/metadata.test.mjs lib/ultra/entities.test.mjs lib/ultra/money.test.mjs lib/ultra/workflow.test.mjs lib/ultra/workflow-store.test.mjs lib/ultra/ledger.test.mjs lib/ultra/consolidation.test.mjs lib/ultra/intercompany.test.mjs lib/ultra/tax.test.mjs lib/ultra/observability.test.mjs lib/ultra/agents.test.mjs",
     "start": "next start -p 8790",
     "db:setup": "node database/setup.mjs",
     "db:erp-core": "node database/migrate-erp-core.mjs",

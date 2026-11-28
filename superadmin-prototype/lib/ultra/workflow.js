@@ -5,9 +5,10 @@
 const TERMINAL_STATES = new Set(["completed", "approved", "rejected", "cancelled"]);
 
 let fallbackCounter = 0;
-function defaultId(prefix) {
+function defaultId() {
   const uuid = globalThis.crypto?.randomUUID?.();
-  return `${prefix}_${uuid || `${Date.now().toString(36)}-${(++fallbackCounter).toString(36)}`}`;
+  if (uuid) return uuid;
+  return `00000000-0000-4000-8000-${(Date.now() + fallbackCounter++).toString(16).padStart(12, "0").slice(-12)}`;
 }
 
 const stamp = (value = new Date()) => new Date(value).toISOString();

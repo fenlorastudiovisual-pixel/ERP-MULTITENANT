@@ -92,9 +92,195 @@ export const OBJECTS = Object.freeze({
     name: "auditEvent",
     table: "erp_audit_events",
     label: "Evento de auditoría inmutable",
-    fields: ["id", "tenant_id", "actor_id", "actor_role", "action", "object_type", "object_id", "before", "after", "metadata", "occurred_at"],
+    fields: ["id", "tenant_id", "actor_id", "actor_role", "action", "object_type", "object_id", "before", "after", "metadata", "reason", "evidence_uri", "hash_prev", "hash", "sequence_no", "occurred_at"],
     required: ["tenant_id", "action", "object_type", "object_id"],
-    permissions: { viewer: ["read"], admin: ["read"] },
+    permissions: { viewer: ["read"], admin: ["read", "create"] },
+  }),
+
+  ledger: object({
+    name: "ledger",
+    table: "erp_ledgers",
+    label: "Libro contable",
+    fields: ["id", "tenant_id", "entity_id", "code", "kind", "currency", "is_base", "fiscal_year_start", "metadata", "status"],
+    required: ["tenant_id", "code", "kind"],
+    unique: [["tenant_id", "code"]],
+    permissions: { viewer: ["read"], manager: ["read"], admin: ["read", "create", "update", "delete"] },
+  }),
+
+  postingRule: object({
+    name: "postingRule",
+    table: "erp_posting_rules",
+    label: "Regla de contabilización derivada",
+    fields: ["id", "tenant_id", "code", "source_type", "ledger_id", "account_map", "dimension_map", "priority", "active"],
+    required: ["tenant_id", "code", "source_type", "ledger_id"],
+    unique: [["tenant_id", "code", "ledger_id", "source_type"]],
+    permissions: { viewer: ["read"], admin: ["read", "create", "update", "delete"] },
+  }),
+
+  derivedEntry: object({
+    name: "derivedEntry",
+    table: "erp_derived_entries",
+    label: "Asiento derivado por libro",
+    fields: ["id", "tenant_id", "source_type", "source_id", "ledger_id", "rule_id", "entry_date", "currency", "rate", "rate_type", "lines", "status"],
+    required: ["tenant_id", "source_type", "source_id", "ledger_id", "entry_date", "currency"],
+    unique: [["tenant_id", "source_type", "source_id", "ledger_id"]],
+    permissions: { viewer: ["read"], admin: ["read", "create", "update", "post"] },
+  }),
+
+  currencyRate: object({
+    name: "currencyRate",
+    table: "erp_currency_rates",
+    label: "Tasa de cambio histórica",
+    fields: ["tenant_id", "rate_date", "from_currency", "to_currency", "rate_type", "rate", "source"],
+    required: ["tenant_id", "rate_date", "from_currency", "to_currency", "rate_type", "rate"],
+    unique: [["tenant_id", "rate_date", "from_currency", "to_currency", "rate_type"]],
+    permissions: { viewer: ["read"], manager: ["read", "create"], admin: ["read", "create", "update", "delete"] },
+  }),
+
+  consolidationGroup: object({
+    name: "consolidationGroup",
+    table: "erp_consolidation_groups",
+    label: "Grupo de consolidación",
+    fields: ["id", "tenant_id", "code", "name", "parent_group_id", "reporting_currency", "method", "status"],
+    required: ["tenant_id", "code", "name"],
+    unique: [["tenant_id", "code"]],
+    permissions: { viewer: ["read"], manager: ["read"], admin: ["read", "create", "update", "delete", "approve"] },
+  }),
+
+  consolidationMember: object({
+    name: "consolidationMember",
+    table: "erp_consolidation_members",
+    label: "Entidad miembro del grupo",
+    fields: ["tenant_id", "group_id", "entity_id", "ownership", "effective_from", "effective_to", "method"],
+    required: ["tenant_id", "group_id", "entity_id", "effective_from", "ownership"],
+    permissions: { viewer: ["read"], manager: ["read"], admin: ["read", "create", "update", "delete"] },
+  }),
+
+  intercompanyPair: object({
+    name: "intercompanyPair",
+    table: "erp_intercompany_pairs",
+    label: "Par intercompañía",
+    fields: ["id", "tenant_id", "entity_a", "entity_b", "tolerance_minor", "settlement_days", "status"],
+    required: ["tenant_id", "entity_a", "entity_b"],
+    unique: [["tenant_id", "entity_a", "entity_b"]],
+    permissions: { viewer: ["read"], manager: ["read"], admin: ["read", "create", "update", "delete"] },
+  }),
+
+  intercompanyTransaction: object({
+    name: "intercompanyTransaction",
+    table: "erp_ic_transactions",
+    label: "Transacción intercompañía",
+    fields: ["id", "tenant_id", "pair_id", "source_type", "source_id", "entity_id", "counterparty_id", "direction", "amount", "currency", "match_key", "status"],
+    required: ["tenant_id", "source_type", "source_id", "entity_id", "counterparty_id", "direction", "amount"],
+    unique: [["tenant_id", "source_type", "source_id"]],
+    permissions: { viewer: ["read"], manager: ["read", "create"], admin: ["read", "create", "update", "delete", "approve"] },
+  }),
+
+  eliminationRule: object({
+    name: "eliminationRule",
+    table: "erp_elimination_rules",
+    label: "Regla de eliminación",
+    fields: ["id", "tenant_id", "group_id", "code", "kind", "rule", "priority", "active"],
+    required: ["tenant_id", "group_id", "code", "kind"],
+    unique: [["tenant_id", "group_id", "code"]],
+    permissions: { viewer: ["read"], admin: ["read", "create", "update", "delete"] },
+  }),
+
+  eliminationEntry: object({
+    name: "eliminationEntry",
+    table: "erp_elimination_entries",
+    label: "Asiento de eliminación",
+    fields: ["id", "tenant_id", "group_id", "period", "rule_id", "match_key", "currency", "lines", "status"],
+    required: ["tenant_id", "group_id", "period", "match_key", "lines"],
+    unique: [["tenant_id", "group_id", "period", "match_key", "rule_id"]],
+    permissions: { viewer: ["read"], admin: ["read", "create", "update", "post"] },
+  }),
+
+  eventEnvelope: object({
+    name: "eventEnvelope",
+    table: "erp_event_envelope",
+    label: "Evento de negocio",
+    fields: ["id", "tenant_id", "event_id", "event_type", "aggregate_type", "aggregate_id", "correlation_id", "causation_id", "schema_version", "payload", "occurred_at"],
+    required: ["tenant_id", "event_id", "event_type"],
+    unique: [["tenant_id", "event_id"]],
+    permissions: { viewer: ["read"], admin: ["read", "create"] },
+  }),
+
+  eventDelivery: object({
+    name: "eventDelivery",
+    table: "erp_event_deliveries",
+    label: "Entrega de evento",
+    fields: ["id", "tenant_id", "envelope_id", "subscription_id", "endpoint", "status", "attempts", "next_attempt_at", "delivered_at"],
+    required: ["tenant_id", "envelope_id", "subscription_id", "endpoint"],
+    unique: [["tenant_id", "envelope_id", "subscription_id"]],
+    permissions: { viewer: ["read"], admin: ["read", "create", "update"] },
+  }),
+
+  deadLetter: object({
+    name: "deadLetter",
+    table: "erp_dead_letters",
+    label: "Evento fallido definitivamente",
+    fields: ["id", "tenant_id", "delivery_id", "envelope_id", "reason", "payload", "failed_at"],
+    required: ["tenant_id", "delivery_id", "envelope_id", "reason"],
+    unique: [["tenant_id", "delivery_id"]],
+    permissions: { viewer: ["read"], admin: ["read", "create"] },
+  }),
+
+  featureFlag: object({
+    name: "featureFlag",
+    table: "erp_feature_flags",
+    label: "Feature flag por tenant",
+    fields: ["tenant_id", "flag", "scope", "entity_id", "enabled", "rollout", "config"],
+    required: ["tenant_id", "flag", "scope"],
+    permissions: { viewer: ["read"], manager: ["read"], admin: ["read", "create", "update", "delete"] },
+  }),
+
+  agentDefinition: object({
+    name: "agentDefinition",
+    table: "erp_agent_definitions",
+    label: "Definición de agente",
+    fields: ["id", "tenant_id", "key", "version", "name", "role", "autonomy", "approval_required", "tools", "config", "active"],
+    required: ["tenant_id", "key", "version", "name"],
+    unique: [["tenant_id", "key", "version"]],
+    permissions: { viewer: ["read"], admin: ["read", "create", "update", "delete"] },
+  }),
+
+  toolAllowlist: object({
+    name: "toolAllowlist",
+    table: "erp_tool_allowlists",
+    label: "Herramienta permitida a un agente",
+    fields: ["tenant_id", "agent_id", "tool", "scopes", "max_calls"],
+    required: ["tenant_id", "agent_id", "tool"],
+    permissions: { viewer: ["read"], admin: ["read", "create", "update", "delete"] },
+  }),
+
+  agentRun: object({
+    name: "agentRun",
+    table: "erp_agent_runs",
+    label: "Ejecución de agente",
+    fields: ["id", "tenant_id", "agent_id", "agent_key", "status", "proposed", "context", "result", "approval", "created_at"],
+    required: ["tenant_id", "status"],
+    permissions: { viewer: ["read"], manager: ["read", "create"], admin: ["read", "create", "update", "approve"] },
+  }),
+
+  approvalGate: object({
+    name: "approvalGate",
+    table: "erp_approval_gates",
+    label: "Gate de aprobación humana",
+    fields: ["id", "tenant_id", "run_id", "gate_type", "required_role", "status", "decided_by", "decided_at", "note"],
+    required: ["tenant_id", "run_id", "gate_type", "required_role", "status"],
+    unique: [["tenant_id", "run_id", "gate_type"]],
+    permissions: { viewer: ["read"], admin: ["read", "create", "update", "approve"] },
+  }),
+
+  agentTrace: object({
+    name: "agentTrace",
+    table: "erp_agent_traces",
+    label: "Traza de herramienta de agente",
+    fields: ["id", "tenant_id", "run_id", "step", "tool", "input", "output", "error", "duration_ms", "occurred_at"],
+    required: ["tenant_id", "run_id", "step", "tool"],
+    unique: [["tenant_id", "run_id", "step"]],
+    permissions: { viewer: ["read"], admin: ["read", "create"] },
   }),
 
   party: object({
