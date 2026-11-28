@@ -589,6 +589,7 @@ create table if not exists public.products (
   name text not null,
   description text,
   category text not null default 'General',
+  brand text not null default 'General',
   price numeric(14,2) not null default 0,
   cost numeric(14,2) not null default 0,
   stock integer not null default 0,

@@ -24,20 +24,22 @@ export async function GET(request) {
   const params = new URL(request.url).searchParams;
   const q = asText(params.get("q")).slice(0, 100);
   const category = asText(params.get("category")).slice(0, 80);
+  const brand = asText(params.get("brand")).slice(0, 80);
   const page = Math.max(1, Math.floor(number(params.get("page"), 1)));
   const limit = Math.min(100, Math.max(5, Math.floor(number(params.get("limit"), 20))));
   const tenantId = ctx.identity.tenant_id;
 
   try {
-    const [rows, categories] = await runAsTenant(tenantId, (tx) => [
+    const [rows, categories, brands] = await runAsTenant(tenantId, (tx) => [
       tx`
-        select p.id::text as id, p.sku, p.name, p.description, p.category,
+        select p.id::text as id, p.sku, p.name, p.description, p.category, p.brand,
                p.price::float as price, p.cost::float as cost, p.unit,
                p.stock, p.min_stock, p.active, p.created_at,
                count(*) over () as total
         from public.products p
         where p.tenant_id = ${tenantId}::uuid
           and (${q} = '' or p.name ilike '%' || ${q} || '%' or p.sku ilike '%' || ${q} || '%')
+          and (${brand} = '' or p.brand = ${brand})
           and (${category} = '' or p.category = ${category})
         order by p.created_at desc, p.name asc
         limit ${limit}::int offset ${(page - 1) * limit}::int
@@ -45,7 +47,13 @@ export async function GET(request) {
       tx`
         select category, count(*)::int as total from public.products
         where tenant_id = ${tenantId}::uuid and active
+          and (${brand} = '' or brand = ${brand})
         group by category order by category
+      `,
+      tx`
+        select brand, count(*)::int as total from public.products
+        where tenant_id = ${tenantId}::uuid and active
+        group by brand order by total desc, brand
       `,
     ], ctx.role, ctx.identity.user_id);
 
@@ -53,6 +61,7 @@ export async function GET(request) {
     return NextResponse.json({
       products: rows.map(({ total: _ignored, ...row }) => row),
       categories,
+      brands,
       total,
       page,
       pages: Math.max(1, Math.ceil(total / limit)),
@@ -76,6 +85,7 @@ export async function POST(request) {
   const sku = asText(body.sku).toUpperCase();
   const name = asText(body.name);
   const category = asText(body.category) || "General";
+  const brand = asText(body.brand) || "General";
   const price = number(body.price, -1);
   const cost = number(body.cost, 0);
   const stock = number(body.stock, 0);
@@ -94,17 +104,17 @@ export async function POST(request) {
     const rows = await runAsTenant(tenantId, (tx) => tx`
       with p as (
         insert into public.products
-          (tenant_id, sku, name, description, category, price, cost, stock, min_stock, unit)
+          (tenant_id, sku, name, description, category, brand, price, cost, stock, min_stock, unit)
         values
-          (${tenantId}::uuid, ${sku}, ${name}, ${description}, ${category},
+          (${tenantId}::uuid, ${sku}, ${name}, ${description}, ${category}, ${brand},
            ${price}, ${cost}, ${stock}::int, ${minStock}::int, ${unit})
         returning *
       ),
       item as (
         insert into public.items
-          (id, tenant_id, sku, name, description, category, uom, sale_price, cost_price, tax_rate)
+          (id, tenant_id, sku, name, description, category, brand, uom, sale_price, cost_price, tax_rate)
         select md5(p.id::text || ':item:' || ${tenantId}::text)::uuid, ${tenantId}::uuid,
-               p.sku, p.name, p.description, p.category, p.unit, p.price, p.cost, 0.19
+               p.sku, p.name, p.description, p.category, p.brand, p.unit, p.price, p.cost, 0.19
         from p
         returning id, tenant_id
       ),

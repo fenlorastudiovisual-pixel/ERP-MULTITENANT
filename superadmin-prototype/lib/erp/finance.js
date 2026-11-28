@@ -30,7 +30,8 @@ export async function issueInvoiceFromOrder(ctx, orderId) {
       insert into public.sequences (tenant_id, doc_type, prefix, period, next_value)
       select ${tenantId}::uuid, 'invoice', 'FV', ${year}, 2 from ord
       on conflict (tenant_id, doc_type, prefix, period)
-      do update set next_value = public.sequences.next_value + 1, updated_at = now()
+      do update set next_value = greatest(public.sequences.next_value, excluded.next_value) + 1,
+                   updated_at = now()
       returning next_value - 1 as num
     ),
     inv as (
@@ -83,10 +84,19 @@ export async function issueInvoiceFromOrder(ctx, orderId) {
     ),
     je_seq as (
       insert into public.sequences (tenant_id, doc_type, prefix, period, next_value)
-      select ${tenantId}::uuid, 'journal', 'AS', ${year}, 2 from inv
+      select ${tenantId}::uuid, 'journal', 'AS', ${year},
+             coalesce((select max(replace(number, 'AS-', '')::int) + 1
+                       from public.journal_entries
+                       where tenant_id = ${tenantId}::uuid and number like 'AS-%'), 2)
+      from inv
       on conflict (tenant_id, doc_type, prefix, period)
-      do update set next_value = public.sequences.next_value + 1, updated_at = now()
-      returning next_value - 1 as num
+      do update set next_value = greatest(
+        public.sequences.next_value, excluded.next_value,
+        coalesce((select max(replace(number, 'AS-', '')::int) + 1
+                  from public.journal_entries
+                  where tenant_id = ${tenantId}::uuid and number like 'AS-%'), 1)
+      ), updated_at = now()
+      returning next_value as num
     ),
     je as (
       insert into public.journal_entries
@@ -133,6 +143,148 @@ export async function issueInvoiceFromOrder(ctx, orderId) {
 }
 
 /**
+ * Convierte una cotización en factura operativa.
+ * La cotización guarda precios con IVA incluido (subtotal = total / 1.19),
+ * igual que los datos importados de Samjuro. Genera factura FV, cartera y
+ * asiento balanceado; la cotización queda marcada como convertida.
+ */
+export async function issueInvoiceFromQuote(ctx, quoteId) {
+  const tenantId = ctx.identity.tenant_id;
+  const actorId = asUuid(ctx.identity.user_id);
+  const year = String(new Date().getUTCFullYear());
+  const rows = await runAsTenant(tenantId, (tx) => tx`
+    with q as (
+      select * from public.invoices_ops
+      where tenant_id = ${tenantId}::uuid
+        and id = ${asUuid(quoteId)}::uuid
+        and prefix = 'COT'
+        and status = 'draft'
+      for update
+    ),
+    ql as (
+      select l.* from public.invoice_lines l
+      join q on q.id = l.invoice_id and l.tenant_id = ${tenantId}::uuid
+    ),
+    locked_seq as (
+      insert into public.sequences (tenant_id, doc_type, prefix, period, next_value)
+      select ${tenantId}::uuid, 'invoice', 'FV', ${year}, 2 from q
+      on conflict (tenant_id, doc_type, prefix, period)
+      do update set next_value = greatest(public.sequences.next_value, excluded.next_value) + 1,
+                   updated_at = now()
+      returning next_value - 1 as num
+    ),
+    inv as (
+      insert into public.invoices_ops
+        (id, tenant_id, number, prefix, partner_id, issue_date, due_date,
+         currency, subtotal, discount, tax, total, balance, status, notes, created_by)
+      select gen_random_uuid(), ${tenantId}::uuid,
+             'FV-' || lpad(locked_seq.num::text, 6, '0'), 'FV',
+             q.partner_id, current_date,
+             current_date + make_interval(days => coalesce(p.payment_terms_days, 0)),
+             q.currency, q.subtotal, q.discount, q.tax, q.total, q.total, 'issued',
+             'Cotización ' || q.number, ${actorId}::uuid
+      from q
+      cross join locked_seq
+      left join public.partners p on p.id = q.partner_id and p.tenant_id = ${tenantId}::uuid
+      returning *
+    ),
+    lines as (
+      insert into public.invoice_lines
+        (id, tenant_id, invoice_id, item_id, description, quantity, unit_price,
+         discount, tax_rate, tax_amount, total, line_order)
+      select gen_random_uuid(), ${tenantId}::uuid, inv.id, ql.item_id, ql.description,
+             ql.quantity, ql.unit_price, ql.discount, ql.tax_rate, ql.tax_amount,
+             ql.total, ql.line_order
+      from inv cross join ql
+      returning id
+    ),
+    recv as (
+      insert into public.receivables
+        (id, tenant_id, invoice_id, partner_id, amount, balance, due_date, status)
+      select gen_random_uuid(), ${tenantId}::uuid, inv.id, inv.partner_id,
+             inv.total, inv.total, inv.due_date, 'open'
+      from inv
+      returning id
+    ),
+    cogs as (
+      select coalesce(sum(coalesce(i.cost_price, 0) * ql.quantity), 0) as amount
+      from inv cross join ql
+      left join public.items i on i.id = ql.item_id and i.tenant_id = ${tenantId}::uuid
+    ),
+    period as (
+      insert into public.periods (tenant_id, year, month, status)
+      select ${tenantId}::uuid, extract(year from current_date)::int,
+             extract(month from current_date)::int, 'open'
+      on conflict (tenant_id, year, month) do nothing
+      returning 1
+    ),
+    je_seq as (
+      insert into public.sequences (tenant_id, doc_type, prefix, period, next_value)
+      select ${tenantId}::uuid, 'journal', 'AS', ${year},
+             coalesce((select max(replace(number, 'AS-', '')::int) + 1
+                       from public.journal_entries
+                       where tenant_id = ${tenantId}::uuid and number like 'AS-%'), 2)
+      from inv
+      on conflict (tenant_id, doc_type, prefix, period)
+      do update set next_value = greatest(
+        public.sequences.next_value, excluded.next_value,
+        coalesce((select max(replace(number, 'AS-', '')::int) + 1
+                  from public.journal_entries
+                  where tenant_id = ${tenantId}::uuid and number like 'AS-%'), 1)
+      ), updated_at = now()
+      returning next_value as num
+    ),
+    je as (
+      insert into public.journal_entries
+        (id, tenant_id, number, entry_date, description, source_type, source_id,
+         total_debit, total_credit, status, created_by)
+      select gen_random_uuid(), ${tenantId}::uuid,
+             'AS-' || lpad(je_seq.num::text, 6, '0'), current_date,
+             'Factura ' || inv.number, 'invoice', inv.id,
+             inv.total + cogs.amount, inv.total + cogs.amount, 'posted', ${actorId}::uuid
+      from inv cross join je_seq cross join cogs
+      returning *
+    ),
+    jel as (
+      insert into public.journal_lines
+        (id, tenant_id, entry_id, account_id, debit, credit, partner_id, ref_type, ref_id, line_order)
+      select gen_random_uuid(), ${tenantId}::uuid, je.id, a.id,
+              case when v.nature = 'debit' then v.amount else 0 end,
+              case when v.nature = 'credit' then v.amount else 0 end,
+              inv.partner_id, 'invoice', inv.id, v.ord
+      from je
+      join inv on inv.id = je.source_id
+      cross join cogs
+      cross join lateral (values
+        ('1305'::text, inv.total, 'debit'::text, 1),
+        ('4135'::text, inv.subtotal - inv.discount, 'credit'::text, 2),
+        ('4750'::text, inv.tax, 'credit'::text, 3),
+        ('5105'::text, cogs.amount, 'debit'::text, 4),
+        ('1510'::text, cogs.amount, 'credit'::text, 5)
+      ) as v(code, amount, nature, ord)
+      join public.accounts a on a.tenant_id = ${tenantId}::uuid and a.code = v.code
+      where v.amount <> 0
+      returning id
+    ),
+    done as (
+      update public.invoices_ops q2
+      set status = 'converted',
+          notes = coalesce(q2.notes, '') || ' Convertida a ' || inv.number,
+          updated_at = now()
+      from q cross join inv
+      where q2.id = q.id and q2.tenant_id = ${tenantId}::uuid
+      returning q2.id
+    )
+    select inv.id::text as id, inv.number, inv.total::float as total,
+           inv.balance::float as balance, inv.status,
+           je.number as journal_number,
+           (select count(*)::int from lines) as lines
+    from inv, je
+  `, ctx.identity.role, asUuid(ctx.identity.user_id) || "");
+  return rows[0] || null;
+}
+
+/**
  * Registra un pago y lo aplica a una o más cuentas por cobrar.
  * Genera el asiento débito banco/caja, crédito clientes.
  */
@@ -150,7 +302,8 @@ export async function recordPayment(ctx, { partnerId, amount, method, reference,
       insert into public.sequences (tenant_id, doc_type, prefix, period, next_value)
       values (${tenantId}::uuid, 'payment', 'PA', ${year}, 2)
       on conflict (tenant_id, doc_type, prefix, period)
-      do update set next_value = public.sequences.next_value + 1, updated_at = now()
+      do update set next_value = greatest(public.sequences.next_value, excluded.next_value) + 1,
+                   updated_at = now()
       returning next_value - 1 as num
     ),
     pay as (
@@ -209,10 +362,18 @@ export async function recordPayment(ctx, { partnerId, amount, method, reference,
     ),
     je_seq as (
       insert into public.sequences (tenant_id, doc_type, prefix, period, next_value)
-      values (${tenantId}::uuid, 'journal', 'AS', ${year}, 2)
+      select ${tenantId}::uuid, 'journal', 'AS', ${year},
+             coalesce((select max(replace(number, 'AS-', '')::int) + 1
+                       from public.journal_entries
+                       where tenant_id = ${tenantId}::uuid and number like 'AS-%'), 2)
       on conflict (tenant_id, doc_type, prefix, period)
-      do update set next_value = public.sequences.next_value + 1, updated_at = now()
-      returning next_value - 1 as num
+      do update set next_value = greatest(
+        public.sequences.next_value, excluded.next_value,
+        coalesce((select max(replace(number, 'AS-', '')::int) + 1
+                  from public.journal_entries
+                  where tenant_id = ${tenantId}::uuid and number like 'AS-%'), 1)
+      ), updated_at = now()
+      returning next_value as num
     ),
     je as (
       insert into public.journal_entries

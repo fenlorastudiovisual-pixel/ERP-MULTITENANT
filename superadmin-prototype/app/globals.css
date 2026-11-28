@@ -115,6 +115,13 @@ tbody tr.clickable{cursor:pointer}
 tbody tr.clickable:hover{background:#fafbff}
 td.right,th.right{text-align:right}
 .empty{text-align:center;color:var(--muted);padding:30px!important}
+.result-grid,.line-grid{overflow:auto;border:1px solid var(--line);border-radius:8px;background:#fff}
+.result-grid{max-height:230px}
+.line-grid{max-height:420px}
+.result-grid thead th,.line-grid thead th{position:sticky;top:0;z-index:1;background:#fafbfd}
+.result-grid td,.line-grid td{padding:7px 10px}
+.cell-input{width:78px;border:1px solid var(--line);border-radius:6px;padding:5px 6px;font-size:12px;text-align:right;background:#fff;outline:none}
+.cell-input:focus{border-color:#6366f1}
 
 /* ── Forms ── */
 .toggle-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #f1f2f6;cursor:pointer}

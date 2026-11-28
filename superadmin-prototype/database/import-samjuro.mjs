@@ -1,18 +1,13 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import crypto from "node:crypto";
 import { neon } from "@neondatabase/serverless";
+import { buildCatalogRows, text, uuid } from "./samjuro-catalog-utils.mjs";
 
 const ROOT = "D:\\datos\\Desktop\\FENLORA VISUAL STUDIO\\SAMJURO-EXPORT";
 const envText = readFileSync(new URL("../.env.local", import.meta.url), "utf8");
 const url = envText.match(/^DATABASE_URL=(.*)$/m)?.[1].replace(/^["']|["']$/g, "");
 if (!url) throw new Error("DATABASE_URL no encontrada");
 const sql = neon(url);
-const u = (s) => {
-  const h = crypto.createHash("md5").update(String(s)).digest("hex");
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
-};
 const num = (v) => Number(v || 0);
-const text = (v) => (v == null ? "" : String(v));
 
 const get = async (name) => {
   const rows = await sql`select payload from samjuro_stage.raw_tables where name = ${name}`;
@@ -40,11 +35,8 @@ const before = await sql`
 `;
 writeFileSync(`${ROOT}\\pilot-before.json`, JSON.stringify({ tenant_id: T, before }, null, 2));
 
-const categoryName = new Map(categories.map((c) => [c.id, c.nombre]));
-const brandName = new Map(brands.map((b) => [b.id, b.nombre]));
 const productById = new Map(products.map((p) => [p.id, p]));
 
-const categoryFor = (p) => categoryName.get(p?.categoria_id) || brandName.get(p?.marca_id) || "General";
 const priceForProduct = (productId) => {
   const ps = presentations
     .filter((x) => x.producto_id === productId && x.precio != null)
@@ -63,7 +55,7 @@ for (const c of customers) {
   let id = partnerForCustomer.get(c.id);
   if (!id) {
     if (!seenDocuments.has(key)) {
-      id = u(`${doc}:partner:${T}`);
+      id = uuid(`${doc}:partner:${T}`);
       seenDocuments.add(key);
       partnerRows.push({
         id,
@@ -77,47 +69,42 @@ for (const c of customers) {
         active: c.activo !== false,
       });
     } else {
-      id = u(`${doc}:partner:${T}`);
+      id = uuid(`${doc}:partner:${T}`);
     }
   }
   partnerForCustomer.set(c.id, id);
 }
 
 // Items: one parent item per product (used by sales lines) + one item per real presentation.
-const itemRows = [];
-const itemForProduct = new Map();
-for (const p of products) {
-  const id = u(`${p.id}:product:${T}`);
-  itemForProduct.set(p.id, id);
-  itemRows.push({
-    id,
-    sku: text(p.sku),
-    name: text(p.nombre),
-    description: text(p.descripcion_corta),
-    category: categoryFor(p),
-    salePrice: priceForProduct(p.id),
-    active: p.activo !== false,
-  });
-}
-for (const pr of presentations) {
-  const p = productById.get(pr.producto_id);
-  const sku = text(pr.sku || `${text(p?.sku || "PROD")}-${String(pr.id).slice(0, 8)}`);
-  itemRows.push({
-    id: u(`${pr.id}:presentation:${T}`),
-    sku,
-    name: `${text(p?.nombre || "Producto")}${pr.nombre ? ` ${text(pr.nombre)}` : ""}`.trim(),
-    description: text(pr.descripcion || p?.descripcion_corta),
-    category: categoryFor(p),
-    salePrice: num(pr.precio),
-    active: pr.activo !== false,
-  });
-}
+const catalogRows = buildCatalogRows({
+  productos: products,
+  presentaciones: presentations,
+  marcas: brands,
+  categorias: categories,
+  tenantId: T,
+});
+const itemRows = catalogRows.map((row) => ({
+  id: row.id,
+  sku: row.sku,
+  name: row.name,
+  description: text(row.raw?.descripcion || row.product?.descripcion_corta),
+  category: row.category,
+  brand: row.brand,
+  salePrice: row.kind === "product" ? priceForProduct(row.product.id) : num(row.raw?.precio),
+  active: row.raw?.activo !== false,
+  sourceTable: row.sourceTable,
+  sourceRowId: row.sourceRowId,
+  sourceSku: row.sourceSku,
+}));
+const itemForProduct = new Map(
+  catalogRows.filter((row) => row.kind === "product").map((row) => [row.product.id, row.id]),
+);
 // Four historical lines reference products that no longer exist in the catalog; keep them.
 const orphanSkus = new Set(lines.filter((l) => !productById.has(l.producto_id)).map((l) => text(l.producto_sku)));
 for (const sku of orphanSkus) {
   const sample = lines.find((l) => text(l.producto_sku) === sku);
   if (!itemRows.some((i) => i.sku === sku)) {
-    const id = u(`${sku}:orphan:${T}`);
+    const id = uuid(`${sku}:orphan:${T}`);
     itemForProduct.set(`sku:${sku}`, id);
     itemRows.push({
       id,
@@ -142,7 +129,7 @@ for (const l of lines) {
 const orderRows = [];
 const lineRows = [];
 for (const o of orders) {
-  const id = u(`${o.id}:sales:${T}`);
+  const id = uuid(`${o.id}:sales:${T}`);
   const its = groupedLines.get(o.id) || [];
   const gross = its.reduce((s, l) => s + num(l.cantidad) * num(l.precio), 0);
   const tax = gross - gross / 1.19;
@@ -161,7 +148,7 @@ for (const o of orders) {
     const itemId = itemForProduct.get(l.producto_id) || itemIdBySku.get(text(l.producto_sku));
     if (!itemId) return;
     lineRows.push({
-      id: u(`${l.id}:salesline:${T}`),
+      id: uuid(`${l.id}:salesline:${T}`),
       orderId: id,
       itemId,
       quantity: Math.max(1, Number(l.cantidad) || 1),
@@ -172,7 +159,7 @@ for (const o of orders) {
   });
 }
 
-const warehouseId = u(`PRINCIPAL:warehouse:${T}`);
+const warehouseId = uuid(`PRINCIPAL:warehouse:${T}`);
 
 await sql.transaction((tx) => {
   const q = [];
@@ -211,18 +198,20 @@ await sql.transaction((tx) => {
 
   const m = itemRows.length;
   q.push(tx`
-    insert into public.items (id, tenant_id, sku, name, description, category, uom, sale_price, cost_price, tax_rate, active)
+    insert into public.items (id, tenant_id, sku, name, description, category, brand, uom, sale_price, cost_price, tax_rate, active)
     select * from unnest(
       ${itemRows.map((r) => r.id)}::uuid[], ${Array(m).fill(T)}::uuid[],
       ${itemRows.map((r) => r.sku)}::text[], ${itemRows.map((r) => r.name)}::text[],
       ${itemRows.map((r) => r.description)}::text[], ${itemRows.map((r) => r.category)}::text[],
+      ${itemRows.map((r) => r.brand)}::text[],
       ${Array(m).fill("und")}::text[], ${itemRows.map((r) => r.salePrice)}::numeric[],
       ${Array(m).fill(0)}::numeric[], ${Array(m).fill(0.19)}::numeric[],
       ${itemRows.map((r) => r.active)}::boolean[]
-    ) as t(id, tenant_id, sku, name, description, category, uom, sale_price, cost_price, tax_rate, active)
+    ) as t(id, tenant_id, sku, name, description, category, brand, uom, sale_price, cost_price, tax_rate, active)
     on conflict (tenant_id, sku) do update set
       name = excluded.name, description = excluded.description, category = excluded.category,
-      sale_price = excluded.sale_price, active = excluded.active, updated_at = now()
+      brand = excluded.brand, sale_price = excluded.sale_price, active = excluded.active,
+      updated_at = now()
   `);
 
   const o = orderRows.length;
@@ -262,15 +251,16 @@ await sql.transaction((tx) => {
   // normalized rows above, so both views describe the same real operations.
   const p = itemRows.length;
   q.push(tx`
-    insert into public.products (id, tenant_id, sku, name, description, category, price, cost, stock, min_stock, unit, active)
+    insert into public.products (id, tenant_id, sku, name, description, category, brand, price, cost, stock, min_stock, unit, active)
     select * from unnest(
       ${itemRows.map((r) => r.id)}::uuid[], ${Array(p).fill(T)}::uuid[],
       ${itemRows.map((r) => r.sku)}::text[], ${itemRows.map((r) => r.name)}::text[],
       ${itemRows.map((r) => r.description)}::text[], ${itemRows.map((r) => r.category)}::text[],
+      ${itemRows.map((r) => r.brand)}::text[],
       ${itemRows.map((r) => r.salePrice)}::numeric[], ${Array(p).fill(0)}::numeric[],
       ${Array(p).fill(0)}::integer[], ${Array(p).fill(0)}::integer[],
       ${Array(p).fill("und")}::text[], ${itemRows.map((r) => r.active)}::boolean[]
-    ) as t(id, tenant_id, sku, name, description, category, price, cost, stock, min_stock, unit, active)
+    ) as t(id, tenant_id, sku, name, description, category, brand, price, cost, stock, min_stock, unit, active)
   `);
   q.push(tx`
     insert into public.customers (id, tenant_id, name, document, email, phone, city, address)

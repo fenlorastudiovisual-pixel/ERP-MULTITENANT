@@ -25,23 +25,27 @@ export async function GET(request) {
       tx`
         select
           (select coalesce(sum(total), 0)::float from public.invoices_ops
-             where tenant_id = ${tenantId}::uuid and status <> 'draft') as invoiced,
+             where tenant_id = ${tenantId}::uuid and prefix = 'FV' and status <> 'draft') as invoiced,
           (select coalesce(sum(amount), 0)::float from public.payments_in
              where tenant_id = ${tenantId}::uuid) as collected,
           (select coalesce(sum(balance), 0)::float from public.receivables
              where tenant_id = ${tenantId}::uuid) as receivable,
           (select count(*)::int from public.invoices_ops
-             where tenant_id = ${tenantId}::uuid and balance > 0) as open_invoices,
+             where tenant_id = ${tenantId}::uuid and prefix = 'FV' and balance > 0) as open_invoices,
           (select coalesce(sum(total_debit), 0)::float from public.journal_entries
              where tenant_id = ${tenantId}::uuid) as posted,
           (select count(*)::int from public.sales_orders
-             where tenant_id = ${tenantId}::uuid and status in ('confirmed', 'delivered')) as invoiceable
+             where tenant_id = ${tenantId}::uuid and status in ('confirmed', 'delivered')) as invoiceable,
+          (select count(*)::int from public.invoices_ops
+             where tenant_id = ${tenantId}::uuid and prefix = 'COT' and status = 'draft') as open_quotes,
+          (select coalesce(sum(total), 0)::float from public.invoices_ops
+             where tenant_id = ${tenantId}::uuid and prefix = 'COT' and status = 'draft') as quoted
       `,
       tx`
         select to_char(m, 'YYYY-MM') as month,
                coalesce((select sum(i.total) from public.invoices_ops i
                   where i.tenant_id = ${tenantId}::uuid
-                    and date_trunc('month', i.issue_date) = m), 0)::float as invoiced,
+                    and i.prefix = 'FV' and date_trunc('month', i.issue_date) = m), 0)::float as invoiced,
                coalesce((select sum(p.amount) from public.payments_in p
                   where p.tenant_id = ${tenantId}::uuid
                     and date_trunc('month', p.payment_date) = m), 0)::float as collected
@@ -67,7 +71,7 @@ export async function GET(request) {
                i.total::float as total, i.balance::float as balance, i.status
         from public.invoices_ops i
         left join public.partners p on p.id = i.partner_id
-        where i.tenant_id = ${tenantId}::uuid
+        where i.tenant_id = ${tenantId}::uuid and i.prefix = 'FV'
         order by i.created_at desc limit 12
       `,
       tx`

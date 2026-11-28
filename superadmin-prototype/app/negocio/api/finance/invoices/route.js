@@ -30,7 +30,7 @@ export async function GET(request) {
       from public.invoices_ops i
       left join public.partners p on p.id = i.partner_id
       left join public.journal_entries je on je.source_id = i.id and je.source_type = 'invoice'
-      where i.tenant_id = ${tenantId}::uuid
+      where i.tenant_id = ${tenantId}::uuid and i.prefix = 'FV'
       order by i.issue_date desc, i.created_at desc limit 100
     `, ctx.identity.role, ctx.identity.user_id);
     return NextResponse.json({ invoices: rows });

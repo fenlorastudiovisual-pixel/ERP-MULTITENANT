@@ -49,6 +49,7 @@ create table if not exists public.items (
   name text not null,
   description text,
   category text not null default 'General',
+  brand text not null default 'General',
   uom text not null default 'und',
   sale_price numeric(14,2) not null default 0,
   cost_price numeric(14,2) not null default 0,

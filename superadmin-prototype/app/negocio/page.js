@@ -11,6 +11,7 @@ const TABS = [
   { id: "productos", label: "Productos" },
   { id: "clientes", label: "Clientes" },
   { id: "pedidos", label: "Pedidos" },
+  { id: "cotizaciones", label: "Cotizar" },
   { id: "facturacion", label: "Finanzas" },
   { id: "inventario", label: "Inventario" },
   { id: "compras", label: "Compras" },
@@ -96,7 +97,7 @@ export default function BusinessPanel() {
 
   // Datos operativos
   const [overview, setOverview] = useState(null);
-  const [products, setProducts] = useState({ products: [], categories: [], total: 0, pages: 1 });
+  const [products, setProducts] = useState({ products: [], categories: [], brands: [], total: 0, pages: 1 });
   const [customers, setCustomers] = useState({ customers: [], total: 0, pages: 1 });
   const [orders, setOrders] = useState({ orders: [], total: 0, pages: 1 });
   const [orderDetail, setOrderDetail] = useState(null);
@@ -136,6 +137,7 @@ export default function BusinessPanel() {
 
   // Filtros y paginación
   const [productQ, setProductQ] = useState("");
+  const [productBrand, setProductBrand] = useState("");
   const [productCategory, setProductCategory] = useState("");
   const [productPage, setProductPage] = useState(1);
   const [customerQ, setCustomerQ] = useState("");
@@ -146,7 +148,7 @@ export default function BusinessPanel() {
 
   // Formularios
   const [modal, setModal] = useState(null);
-  const [productForm, setProductForm] = useState({ sku: "", name: "", category: "General", price: "", cost: "", stock: "", min_stock: "", unit: "und", description: "" });
+  const [productForm, setProductForm] = useState({ sku: "", name: "", category: "General", brand: "General", price: "", cost: "", stock: "", min_stock: "", unit: "und", description: "" });
   const [customerForm, setCustomerForm] = useState({ name: "", document: "", email: "", phone: "", city: "", address: "" });
   const [stockTarget, setStockTarget] = useState(null);
   const [stockForm, setStockForm] = useState({ delta: "", reason: "" });
@@ -157,6 +159,19 @@ export default function BusinessPanel() {
   const [productResults, setProductResults] = useState([]);
   const [cart, setCart] = useState([]);
 
+  // Cotizador masivo (IVA incluido en el precio del catálogo)
+  const [quotes, setQuotes] = useState([]);
+  const [quoteForm, setQuoteForm] = useState({ partnerId: "", notes: "" });
+  const [quoteLines, setQuoteLines] = useState([]);
+  const [quoteResults, setQuoteResults] = useState([]);
+  const [quoteSearch, setQuoteSearch] = useState("");
+  const [quoteBrand, setQuoteBrand] = useState("");
+  const [quoteCategory, setQuoteCategory] = useState("");
+  const [quoteCustomers, setQuoteCustomers] = useState([]);
+  const [quoteFacets, setQuoteFacets] = useState({ brands: [], categories: [] });
+  const [bulkQty, setBulkQty] = useState("1");
+  const [activeQuote, setActiveQuote] = useState(null);
+
   const loadOverview = useCallback(async () => {
     const { ok, json } = await jsonRequest("/negocio/api/overview");
     if (ok) setOverview(json);
@@ -165,12 +180,13 @@ export default function BusinessPanel() {
 
   const loadProducts = useCallback(async () => {
     const query = new URLSearchParams({
-      q: productQ, category: productCategory, page: String(productPage), limit: "20",
+      q: productQ, brand: productBrand, category: productCategory,
+      page: String(productPage), limit: "20",
     });
     const { ok, json } = await jsonRequest(`/negocio/api/products?${query}`);
     if (ok) setProducts(json);
     else setError(json.error || "No se pudo cargar el catálogo");
-  }, [productQ, productCategory, productPage]);
+  }, [productQ, productBrand, productCategory, productPage]);
 
   const loadCustomers = useCallback(async () => {
     const query = new URLSearchParams({ q: customerQ, page: String(customerPage), limit: "20" });
@@ -248,6 +264,17 @@ export default function BusinessPanel() {
     setError("");
   }, []);
 
+  const loadQuotes = useCallback(async () => {
+    const { ok, json } = await jsonRequest("/negocio/api/quotes");
+    if (ok) setQuotes(json.quotes || []);
+    else setError(json.error || "No se pudieron cargar las cotizaciones");
+  }, []);
+
+  const loadQuoteCustomers = useCallback(async () => {
+    const { ok, json } = await jsonRequest("/negocio/api/customers?limit=100");
+    if (ok) setQuoteCustomers(json.customers || []);
+  }, []);
+
   async function load() {
     const { ok, status, json } = await jsonRequest("/negocio/api/me");
     if (ok) {
@@ -276,7 +303,8 @@ export default function BusinessPanel() {
     if (tab === "productos") { loadProducts(); loadPriceSync(); }
     if (tab === "clientes") loadCustomers();
     if (tab === "pedidos") loadOrders();
-  }, [view, tab, loadOverview, loadFinance, loadInventory, loadPurchases, loadMargins, loadPriceSync, loadProducts, loadCustomers, loadOrders]);
+    if (tab === "cotizaciones") { loadQuotes(); loadQuoteCustomers(); }
+  }, [view, tab, loadOverview, loadFinance, loadInventory, loadPurchases, loadMargins, loadPriceSync, loadProducts, loadCustomers, loadOrders, loadQuotes, loadQuoteCustomers]);
 
   useEffect(() => {
     if (!notice) return;
@@ -296,6 +324,22 @@ export default function BusinessPanel() {
     }, 250);
     return () => { alive = false; clearTimeout(timer); };
   }, [modal, productSearch]);
+
+  useEffect(() => {
+    if (view !== "panel" || tab !== "cotizaciones") return;
+    let alive = true;
+    const timer = setTimeout(async () => {
+      const query = new URLSearchParams({
+        q: quoteSearch, brand: quoteBrand, category: quoteCategory, limit: "100",
+      });
+      const { ok, json } = await jsonRequest(`/negocio/api/products?${query}`);
+      if (alive && ok) {
+        setQuoteResults(json.products || []);
+        setQuoteFacets({ brands: json.brands || [], categories: json.categories || [] });
+      }
+    }, 220);
+    return () => { alive = false; clearTimeout(timer); };
+  }, [view, tab, quoteSearch, quoteBrand, quoteCategory]);
 
   async function submitLogin(event) {
     event.preventDefault();
@@ -516,6 +560,101 @@ export default function BusinessPanel() {
     });
   }
 
+  const makeQuoteLine = (product, quantity) => ({
+    key: `${product.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    productId: product.id, sku: product.sku, name: product.name,
+    brand: product.brand, category: product.category,
+    quantity, price: Number(product.price || 0),
+  });
+
+  function addQuoteLine(product, quantity = 1) {
+    setQuoteLines((prev) => {
+      const index = prev.findIndex((line) => line.productId === product.id);
+      if (index < 0) return [...prev, makeQuoteLine(product, quantity)];
+      return prev.map((line, i) => i === index ? { ...line, quantity: line.quantity + quantity } : line);
+    });
+  }
+
+  function addAllQuoteResults() {
+    if (!quoteResults.length) return;
+    setQuoteLines((prev) => {
+      let next = prev;
+      for (const product of quoteResults) {
+        const index = next.findIndex((line) => line.productId === product.id);
+        next = index < 0
+          ? [...next, makeQuoteLine(product, 1)]
+          : next.map((line, i) => i === index ? { ...line, quantity: line.quantity + 1 } : line);
+      }
+      return next;
+    });
+  }
+
+  function updateQuoteLine(key, field, value) {
+    const clean = field === "quantity"
+      ? Math.max(1, Math.floor(Number(value) || 1))
+      : Math.max(0, Number(value) || 0);
+    setQuoteLines((prev) => prev.map((line) => line.key === key ? { ...line, [field]: clean } : line));
+  }
+
+  function removeQuoteLine(key) {
+    setQuoteLines((prev) => prev.filter((line) => line.key !== key));
+  }
+
+  function applyBulkQty() {
+    const qty = Math.max(1, Math.floor(Number(bulkQty) || 1));
+    setQuoteLines((prev) => prev.map((line) => ({ ...line, quantity: qty })));
+  }
+
+  function newQuote() {
+    setQuoteLines([]);
+    setActiveQuote(null);
+    setQuoteForm({ partnerId: "", notes: "" });
+    setError("");
+  }
+
+  async function loadQuote(row) {
+    const { ok, json } = await jsonRequest(`/negocio/api/quotes?id=${row.id}`);
+    if (!ok) return setError(json.error || "No se pudo cargar la cotización");
+    setActiveQuote(json.quote);
+    setQuoteForm({ partnerId: json.quote.partner_id || "", notes: json.quote.notes || "" });
+    setQuoteLines(json.lines.map((line) => ({
+      key: line.id, productId: line.product_id, sku: line.description,
+      name: line.description, brand: "", category: "",
+      quantity: line.quantity,
+      price: Math.round((line.total / line.quantity) * 100) / 100,
+    })));
+    setNotice(`Cotización ${json.quote.number} cargada · ${json.lines.length} líneas`);
+  }
+
+  async function saveQuote() {
+    if (!quoteForm.partnerId) return setError("Selecciona un cliente");
+    if (!quoteLines.length) return setError("Agrega al menos un producto a la cotización");
+    const payload = {
+      partnerId: quoteForm.partnerId,
+      notes: quoteForm.notes,
+      lines: quoteLines.map((line) => ({
+        product_id: line.productId, quantity: line.quantity, price: line.price,
+      })),
+    };
+    if (activeQuote) payload.quoteId = activeQuote.id;
+    await mutate("/negocio/api/quotes", activeQuote ? "PATCH" : "POST", payload, (json) => {
+      setActiveQuote(json.quote);
+      loadQuotes();
+      setNotice(`Cotización ${json.quote.number} guardada · ${money(json.quote.total)}`);
+    });
+  }
+
+  async function convertQuote(quoteId) {
+    const id = quoteId || activeQuote?.id;
+    if (!id) return setError("Guarda la cotización antes de facturarla");
+    await mutate("/negocio/api/quotes", "POST", { action: "convert", quoteId: id }, (json) => {
+      loadQuotes();
+      loadFinance();
+      loadOverview();
+      setNotice(`Factura ${json.invoice.number} emitida · ${json.invoice.lines} líneas · asiento ${json.invoice.journal_number}`);
+    });
+  }
+
   async function submitPayment(event) {
     event.preventDefault();
     const amount = Number(financeForm.amount);
@@ -710,14 +849,26 @@ export default function BusinessPanel() {
   const cartSubtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const cartTax = Math.round(cartSubtotal * 0.19 * 100) / 100;
 
+  const quoteTotals = quoteLines.reduce((acc, line) => {
+    const gross = Number(line.price || 0) * Number(line.quantity || 0);
+    const net = gross / 1.19;
+    acc.units += Number(line.quantity || 0);
+    acc.subtotal += net;
+    acc.tax += gross - net;
+    acc.total += gross;
+    return acc;
+  }, { units: 0, subtotal: 0, tax: 0, total: 0 });
+
   return (
     <main className="tenant-shell">
       <header className="tenant-head">
         <div className="tenant-logo" style={{ background: tenant.color }}>{tenant.name.slice(0, 2).toUpperCase()}</div>
         <div>
-          <div className="tenant-eyebrow">ERP operativo · piloto en Neon</div>
+          <div className="tenant-eyebrow">ERP operativo</div>
           <h1>{tenant.name}</h1>
-          <p>{tenant.niche} · {tenant.city}, {tenant.country}</p>
+          {[tenant.niche, tenant.city, tenant.country].filter(Boolean).length > 0 && (
+            <p>{[tenant.niche, tenant.city, tenant.country].filter(Boolean).join(" · ")}</p>
+          )}
         </div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
           <Tag tone={tenant.status === "active" ? "green" : "amber"} dot>{STATUS[tenant.status] || tenant.status}</Tag>
@@ -725,10 +876,6 @@ export default function BusinessPanel() {
         </div>
       </header>
 
-      <div className="callout">Sesión de <b>{email}</b> como <b>{role}</b>. Productos, clientes, pedidos e inventario de <b>{tenant.name}</b> en tiempo real.</div>
-      {tenant.id === "t17_sandbox" && <div className="callout amber">
-        <b>Piloto con datos reales importados desde la Supabase de Samjuro</b> (lectura sola; no se modificó tu sistema). Catálogo, clientes, pedidos y líneas ya son reales. <b>Aún no hay costo de proveedor registrado</b> en la fuente: las utilidades mostrarán margen completo hasta que se registren los costos aquí en el ERP.
-      </div>}
       {(error || notice) && <div className={`callout ${error ? "amber" : "green"}`}>{error || notice}</div>}
 
       <Tabs tabs={TABS} value={tab} onChange={setTab} />
@@ -744,8 +891,7 @@ export default function BusinessPanel() {
 
         <div className="chart-grid">
           <Panel title="Ventas de los últimos 6 meses" subtitle="Total de pedidos vigentes por mes">
-            <Bars height={170} data={(overview?.sales || []).map((row) => ({ label: monthLabel(row.month), value: row.total }))} />
-            <div className="callout" style={{ marginTop: 12 }}>Valor del inventario activo: <b>{money(kpis.inventory_value)}</b> al costo.</div>
+            <Bars height={150} data={(overview?.sales || []).map((row) => ({ label: monthLabel(row.month), value: row.total }))} />
           </Panel>
           <Panel title="Estado de los pedidos" subtitle={`${statusTotal.toLocaleString("es-CO")} pedidos registrados`}>
             {donutItems.length ? <Donut items={donutItems} /> : <div className="empty-state"><span>◇</span><b>Sin pedidos</b></div>}
@@ -760,34 +906,15 @@ export default function BusinessPanel() {
               { key: "revenue", label: "Ingresos", align: "right", render: (row) => money(row.revenue) },
             ]} rows={overview?.topProducts || []} empty="Todavía no hay ventas" />
           </Panel>
-          <Panel title="Inventario por reponer" subtitle="Productos con stock en o por debajo del mínimo" bodyClass="tight">
-            <div className="mini-list">
-              {(overview?.lowStock || []).map((row) => (
-                <li key={row.sku}><span>!</span><div style={{ flex: 1 }}><b>{row.name}</b><div style={{ color: "#8b93a1", fontSize: 10 }}>{row.sku} · mín. {row.min_stock}</div></div>
-                  <Tag tone="amber">{row.stock}</Tag></li>
-              ))}
-              {!overview?.lowStock?.length && <li><span>✓</span>Stock dentro de los mínimos</li>}
-            </div>
+          <Panel title="Pedidos recientes" subtitle="Haz clic en un pedido para ver su detalle" bodyClass="tight">
+            <Table compact columns={[
+              { key: "number", label: "Pedido" },
+              { key: "customer", label: "Cliente" },
+              { key: "total", label: "Total", align: "right", render: (row) => money(row.total) },
+              { key: "status", label: "Estado", render: (row) => statusTag(row.status) },
+            ]} rows={overview?.recentOrders || []} onRow={openOrder} empty="Todavía no hay pedidos" />
           </Panel>
         </div>
-
-        <Panel title="Pedidos recientes" subtitle="Haz clic en un pedido para ver su detalle" bodyClass="tight">
-          <Table columns={[
-            { key: "number", label: "Pedido" },
-            { key: "customer", label: "Cliente" },
-            { key: "total", label: "Total", align: "right", render: (row) => money(row.total) },
-            { key: "status", label: "Estado", render: (row) => statusTag(row.status) },
-            { key: "created_at", label: "Fecha", render: (row) => dateLabel(row.created_at) },
-          ]} rows={overview?.recentOrders || []} onRow={openOrder} empty="Todavía no hay pedidos" />
-        </Panel>
-
-        <Panel title="Catálogo por categoría" subtitle="Distribución real del inventario" bodyClass="tight">
-          <Table compact columns={[
-            { key: "category", label: "Categoría" },
-            { key: "products", label: "Productos", align: "right" },
-            { key: "units", label: "Unidades en stock", align: "right", render: (row) => Number(row.units).toLocaleString("es-CO") },
-          ]} rows={overview?.categories || []} empty="Sin categorías" />
-        </Panel>
       </>}
 
       {/* ── Productos ───────────────────────────────────────────────────── */}
@@ -799,6 +926,10 @@ export default function BusinessPanel() {
         <div className="filter-row" style={{ padding: "14px 16px 0" }}>
           <input placeholder="Buscar por nombre o SKU…" value={productQ}
             onChange={(e) => { setProductQ(e.target.value); setProductPage(1); }} style={{ width: 280 }} />
+          <select value={productBrand} onChange={(e) => { setProductBrand(e.target.value); setProductCategory(""); setProductPage(1); }}>
+            <option value="">Todas las marcas</option>
+            {(products.brands || []).map((row) => <option key={row.brand} value={row.brand}>{row.brand} ({row.total})</option>)}
+          </select>
           <select value={productCategory} onChange={(e) => { setProductCategory(e.target.value); setProductPage(1); }}>
             <option value="">Todas las categorías</option>
             {(products.categories || []).map((cat) => <option key={cat.category} value={cat.category}>{cat.category} ({cat.total})</option>)}
@@ -807,7 +938,7 @@ export default function BusinessPanel() {
         </div>
         <Table compact columns={[
           { key: "sku", label: "SKU", render: (row) => <span className="mono">{row.sku}</span> },
-          { key: "name", label: "Producto", render: (row) => <div><b>{row.name}</b><div style={{ color: "#8b93a1", fontSize: 10 }}>{row.category} · {row.unit}</div></div> },
+          { key: "name", label: "Producto", render: (row) => <div><b>{row.name}</b><div style={{ color: "#8b93a1", fontSize: 10 }}>{row.brand} · {row.category} · {row.unit}</div></div> },
           { key: "price", label: "Precio", align: "right", render: (row) => money(row.price) },
           { key: "cost", label: "Costo", align: "right", render: (row) => money(row.cost) },
           { key: "stock", label: "Stock", align: "right", render: (row) => <Tag tone={row.stock <= row.min_stock ? "amber" : "green"}>{row.stock} / mín. {row.min_stock}</Tag> },
@@ -872,12 +1003,109 @@ export default function BusinessPanel() {
         <Pager page={orders.page || 1} pages={orders.pages || 1} total={orders.total} onChange={setOrderPage} />
       </Panel>}
 
+      {/* ── Cotizador masivo ───────────────────────────────────────────── */}
+      {tab === "cotizaciones" && <>
+        <Panel title="Cliente y productos" subtitle="Busca por nombre, SKU, marca o categoría y agrega las líneas que necesites">
+          <div className="two-col">
+            <Field label="Cliente">
+              <select value={quoteForm.partnerId} onChange={(e) => setQuoteForm((prev) => ({ ...prev, partnerId: e.target.value }))}>
+                <option value="">Selecciona un cliente…</option>
+                {quoteCustomers.map((row) => (
+                  <option key={row.id} value={row.id}>{row.name}{row.document ? ` · ${row.document}` : ""}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Notas / referencia" hint="Opcional; viaja en la cotización">
+              <input value={quoteForm.notes} onChange={(e) => setQuoteForm((prev) => ({ ...prev, notes: e.target.value }))} placeholder="Ej. Cotización para pedido de octubre" />
+            </Field>
+          </div>
+          <div className="filter-row" style={{ marginTop: 12, marginBottom: 10 }}>
+            <input placeholder="Buscar producto o SKU…" value={quoteSearch}
+              onChange={(e) => setQuoteSearch(e.target.value)} style={{ width: 280 }} />
+            <select value={quoteBrand} onChange={(e) => { setQuoteBrand(e.target.value); setQuoteCategory(""); }}>
+              <option value="">Todas las marcas</option>
+              {(quoteFacets.brands || []).map((row) => <option key={row.brand} value={row.brand}>{row.brand} ({row.total})</option>)}
+            </select>
+            <select value={quoteCategory} onChange={(e) => setQuoteCategory(e.target.value)}>
+              <option value="">Todas las categorías</option>
+              {(quoteFacets.categories || []).map((row) => <option key={row.category} value={row.category}>{row.category} ({row.total})</option>)}
+            </select>
+            <Btn size="xs" tone="primary" onClick={addAllQuoteResults} disabled={!quoteResults.length}>
+              Agregar resultados ({quoteResults.length})
+            </Btn>
+          </div>
+          <div className="result-grid">
+            <Table compact columns={[
+              { key: "sku", label: "SKU", render: (row) => <span className="mono">{row.sku}</span> },
+              { key: "name", label: "Producto", render: (row) => <div><b>{row.name}</b><div style={{ color: "#8b93a1", fontSize: 10 }}>{row.brand} · {row.category}</div></div> },
+              { key: "price", label: "Precio c/IVA", align: "right", render: (row) => money(row.price) },
+              { key: "stock", label: "Stock", align: "right" },
+              { key: "add", label: "", align: "right", render: (row) => <Btn size="xs" onClick={() => addQuoteLine(row)}>＋</Btn> },
+            ]} rows={quoteResults} empty="Escribe para buscar productos del catálogo" />
+          </div>
+        </Panel>
+
+        <Panel title="Líneas de la cotización" subtitle="Precio con IVA incluido · el subtotal sin IVA se calcula automáticamente"
+          actions={<Btn onClick={newQuote}>Limpiar</Btn>}>
+          <div className="line-grid">
+            <Table compact columns={[
+              { key: "sku", label: "SKU", render: (row) => <span className="mono">{row.sku}</span> },
+              { key: "name", label: "Producto", render: (row) => <div><b>{row.name}</b><div style={{ color: "#8b93a1", fontSize: 10 }}>{[row.brand, row.category].filter(Boolean).join(" · ")}</div></div> },
+              { key: "qty", label: "Cant.", align: "right", render: (row) => <input className="cell-input" type="number" min="1" step="1" value={row.quantity} onChange={(e) => updateQuoteLine(row.key, "quantity", e.target.value)} /> },
+              { key: "price", label: "P. unit. c/IVA", align: "right", render: (row) => <input className="cell-input" type="number" min="0" step="0.01" value={row.price} onChange={(e) => updateQuoteLine(row.key, "price", e.target.value)} /> },
+              { key: "net", label: "Subtotal s/IVA", align: "right", render: (row) => money(row.price * row.quantity / 1.19) },
+              { key: "tax", label: "IVA", align: "right", render: (row) => money(row.price * row.quantity - row.price * row.quantity / 1.19) },
+              { key: "total", label: "Total", align: "right", render: (row) => <b>{money(row.price * row.quantity)}</b> },
+              { key: "remove", label: "", align: "right", render: (row) => <Btn size="xs" onClick={() => removeQuoteLine(row.key)}>×</Btn> },
+            ]} rows={quoteLines} empty="Agrega productos desde el buscador de arriba" />
+          </div>
+          <div className="filter-row" style={{ marginTop: 10, marginBottom: 0 }}>
+            <span style={{ color: "#8b93a1", fontSize: 11 }}>Cantidad para todas las líneas</span>
+            <input className="cell-input" type="number" min="1" step="1" value={bulkQty} onChange={(e) => setBulkQty(e.target.value)} style={{ width: 90 }} />
+            <Btn size="xs" onClick={applyBulkQty} disabled={!quoteLines.length}>Aplicar a todas</Btn>
+            <div style={{ marginLeft: "auto", display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+              <span><small style={{ color: "#8b93a1" }}>Líneas</small> <b>{quoteLines.length}</b></span>
+              <span><small style={{ color: "#8b93a1" }}>Unidades</small> <b>{quoteTotals.units}</b></span>
+              <span><small style={{ color: "#8b93a1" }}>Subtotal</small> <b>{money(quoteTotals.subtotal)}</b></span>
+              <span><small style={{ color: "#8b93a1" }}>IVA</small> <b>{money(quoteTotals.tax)}</b></span>
+              <span style={{ fontSize: 16 }}><small style={{ color: "#8b93a1", fontSize: 11 }}>Total</small> <b>{money(quoteTotals.total)}</b></span>
+            </div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+            <Btn onClick={saveQuote} disabled={busy || !quoteLines.length || !quoteForm.partnerId}>
+              {activeQuote ? "Guardar cambios" : "Guardar cotización"}
+            </Btn>
+            <Btn tone="primary" icon="＋" onClick={() => convertQuote()} disabled={busy || !activeQuote || !quoteLines.length}>
+              Convertir a factura
+            </Btn>
+          </div>
+          {activeQuote && <div className="callout green" style={{ marginTop: 10 }}>
+            Cotización activa: <b>{activeQuote.number}</b> · guarda los cambios antes de facturar.
+          </div>}
+        </Panel>
+
+        <Panel title="Cotizaciones guardadas" subtitle="Cárgalas para editarlas o factúralas directamente" bodyClass="tight">
+          <Table compact columns={[
+            { key: "number", label: "Cotización", render: (row) => <span className="mono">{row.number}</span> },
+            { key: "partner", label: "Cliente" },
+            { key: "lines", label: "Líneas", align: "right" },
+            { key: "total", label: "Total", align: "right", render: (row) => money(row.total) },
+            { key: "status", label: "Estado", render: (row) => <Tag tone={row.converted_invoice ? "green" : "indigo"} dot>{row.converted_invoice ? `Facturada · ${row.converted_invoice}` : "Borrador"}</Tag> },
+            { key: "actions", label: "", align: "right", render: (row) => <div style={{ display: "flex", gap: 5, justifyContent: "flex-end" }}>
+              <Btn size="xs" onClick={() => loadQuote(row)}>Cargar</Btn>
+              {!row.converted_invoice && <Btn size="xs" tone="primary" onClick={() => convertQuote(row.id)}>Facturar</Btn>}
+            </div> },
+          ]} rows={quotes} empty="Aún no hay cotizaciones guardadas" />
+        </Panel>
+      </>}
+
       {/* ── Finanzas ────────────────────────────────────────────────────── */}
       {tab === "facturacion" && <>
-        <div className="stat-grid" style={{ gridTemplateColumns: "repeat(4,1fr)" }}>
+        <div className="stat-grid" style={{ gridTemplateColumns: "repeat(5,1fr)" }}>
           <Stat label="Facturado" value={compact(finance.kpis?.invoiced)} icon="↗" tone="green" hint={`${finance.kpis?.open_invoices || 0} facturas pendientes`} />
           <Stat label="Cobrado" value={compact(finance.kpis?.collected)} icon="◎" tone="indigo" />
           <Stat label="Por cobrar" value={compact(finance.kpis?.receivable)} icon="⏱" tone="amber" />
+          <Stat label="Cotizado" value={compact(finance.kpis?.quoted)} icon="▤" tone="amber" hint={`${finance.kpis?.open_quotes || 0} cotizaciones abiertas`} />
           <Stat label="Libro contable" value={compact(finance.kpis?.posted)} icon="▤" hint="Débito = crédito" />
         </div>
 
@@ -891,17 +1119,19 @@ export default function BusinessPanel() {
         </div>
 
         <div className="chart-grid">
-          <Panel title="Emitir factura" subtitle="El pedido pasa a facturado y genera su asiento balanceado">
+          <Panel title="Cotizar y facturar" subtitle="Para decenas o cientos de líneas usa el cotizador; el pedido suelto sigue disponible aquí">
             <div className="filter-row">
-              <select value={financeForm.orderId} onChange={(e) => setFinanceForm((prev) => ({ ...prev, orderId: e.target.value }))} style={{ minWidth: 320 }}>
-                <option value="">Selecciona un pedido confirmado…</option>
+              <Btn tone="primary" icon="＋" onClick={() => setTab("cotizaciones")}>Abrir cotizador</Btn>
+            </div>
+            <div className="filter-row" style={{ marginBottom: 0 }}>
+              <select value={financeForm.orderId} onChange={(e) => setFinanceForm((prev) => ({ ...prev, orderId: e.target.value }))} style={{ minWidth: 260 }}>
+                <option value="">Facturar un pedido suelto…</option>
                 {(finance.invoiceableOrders || []).map((row) => (
                   <option key={row.id} value={row.id}>{row.number} · {row.partner} · {money(row.total)}</option>
                 ))}
               </select>
-              <Btn tone="primary" icon="＋" onClick={issueInvoice} disabled={busy || !financeForm.orderId}>Emitir factura</Btn>
+              <Btn onClick={issueInvoice} disabled={busy || !financeForm.orderId}>Emitir factura</Btn>
             </div>
-            {!finance.invoiceableOrders?.length && <div className="callout" style={{ marginTop: 10 }}>No hay pedidos listos para facturar. Confirma o entrega un pedido primero.</div>}
           </Panel>
 
           <Panel title="Registrar pago" subtitle="Aplica a la cartera y deja su asiento en el libro único">
@@ -978,27 +1208,24 @@ export default function BusinessPanel() {
           </Panel>
         </div>
 
-        <Panel title="Libro contable" subtitle="Un solo libro por negocio: cada documento genera débito y crédito" bodyClass="tight">
-          <Table compact columns={[
-            { key: "number", label: "Asiento", render: (row) => <span className="mono">{row.number}</span> },
-            { key: "entry_date", label: "Fecha", render: (row) => dateLabel(row.entry_date) },
-            { key: "description", label: "Descripción" },
-            { key: "source_type", label: "Origen" },
-            { key: "total_debit", label: "Débito", align: "right", render: (row) => money(row.total_debit) },
-            { key: "status", label: "Estado", render: (row) => financeTag(row.status) },
-          ]} rows={finance.entries || []} empty="Aún no hay asientos contables" />
-        </Panel>
-
-        <Panel title="Pagos registrados" subtitle="Cobros y su aplicación a facturas" bodyClass="tight">
-          <Table compact columns={[
-            { key: "number", label: "Pago", render: (row) => <span className="mono">{row.number}</span> },
-            { key: "payment_date", label: "Fecha", render: (row) => dateLabel(row.payment_date) },
-            { key: "method", label: "Método" },
-            { key: "amount", label: "Valor", align: "right", render: (row) => money(row.amount) },
-            { key: "unapplied", label: "Sin aplicar", align: "right", render: (row) => money(row.unapplied) },
-            { key: "status", label: "Estado", render: (row) => financeTag(row.status) },
-          ]} rows={finance.payments || []} empty="Todavía no hay pagos registrados" />
-        </Panel>
+        <div className="chart-grid">
+          <Panel title="Libro contable" subtitle="Cada documento genera débito y crédito" bodyClass="tight">
+            <Table compact columns={[
+              { key: "number", label: "Asiento", render: (row) => <span className="mono">{row.number}</span> },
+              { key: "entry_date", label: "Fecha", render: (row) => dateLabel(row.entry_date) },
+              { key: "description", label: "Descripción" },
+              { key: "total_debit", label: "Débito", align: "right", render: (row) => money(row.total_debit) },
+            ]} rows={finance.entries || []} empty="Aún no hay asientos contables" />
+          </Panel>
+          <Panel title="Pagos registrados" subtitle="Cobros aplicados a facturas" bodyClass="tight">
+            <Table compact columns={[
+              { key: "number", label: "Pago", render: (row) => <span className="mono">{row.number}</span> },
+              { key: "payment_date", label: "Fecha", render: (row) => dateLabel(row.payment_date) },
+              { key: "amount", label: "Valor", align: "right", render: (row) => money(row.amount) },
+              { key: "status", label: "Estado", render: (row) => financeTag(row.status) },
+            ]} rows={finance.payments || []} empty="Todavía no hay pagos registrados" />
+          </Panel>
+        </div>
       </>}
 
       {/* ── Inventario ──────────────────────────────────────────────────── */}
@@ -1340,9 +1567,7 @@ export default function BusinessPanel() {
         </Panel>
         <Panel title="Empresa activa" subtitle="Las escrituras siempre quedan dentro del tenant seleccionado">
           <div className="callout">
-            {tenant.id === "t17_sandbox"
-              ? "Estás en Samjuro Piloto. Las facturas, pagos e inventario que registres aquí no afectan los datos reales de Samjuro."
-              : "Estás en el negocio real. Evita registrar operaciones hasta terminar la validación."}
+            Las operaciones que registres en este espacio quedan aisladas dentro de Samjuro.
           </div>
           {(data.tenants || []).length > 1 && (
             <Field label="Cambiar de empresa" hint="La sesión se vuelve a firmar con la empresa elegida">
@@ -1378,8 +1603,14 @@ export default function BusinessPanel() {
       {/* ── Modales ─────────────────────────────────────────────────────── */}
       <Modal open={modal === "product"} onClose={() => setModal(null)} title="Nuevo producto" subtitle="Se agrega al catálogo de este negocio">
         <form onSubmit={submitProduct}>
-          <div className="two-col">
+          <div className="three-col">
             <Field label="SKU"><input required value={productForm.sku} onChange={(e) => setProductForm({ ...productForm, sku: e.target.value.toUpperCase() })} placeholder="SKU-01241" /></Field>
+            <Field label="Marca">
+              <select value={productForm.brand} onChange={(e) => setProductForm({ ...productForm, brand: e.target.value, category: "General" })}>
+                {(products.brands || []).map((row) => <option key={row.brand}>{row.brand}</option>)}
+                <option>General</option>
+              </select>
+            </Field>
             <Field label="Categoría">
               <select value={productForm.category} onChange={(e) => setProductForm({ ...productForm, category: e.target.value })}>
                 {(products.categories || []).map((cat) => <option key={cat.category}>{cat.category}</option>)}
