@@ -88,6 +88,44 @@ test("start es idempotente y emite una sola vez", async () => {
   assert.equal(state.outbox.size, 1);
 });
 
+test("start ignora una idempotencia huérfana y recrea la instancia", async () => {
+  const { store, state } = createMemoryStore();
+  state.idempotency.set(`${TENANT}:approval:1:entity:orphan`, {
+    result: { instanceId: "no-existe", state: "draft", status: "active" },
+  });
+  const engine = createWorkflowEngine({ store, handlers: {} });
+  const definition = approvalDefinition();
+
+  const started = await engine.start({
+    tenantId: TENANT,
+    definition,
+    entityType: "entity",
+    entityId: "orphan",
+    actor: "owner",
+  });
+  assert.equal(started.replayed, false);
+  assert.notEqual(started.instanceId, "no-existe");
+  assert.ok(store.getInstance(TENANT, started.instanceId));
+});
+
+test("start acepta idempotencia devuelta sin envoltorio result", async () => {
+  const { store } = createMemoryStore();
+  store.getIdempotency = async () => ({
+    instanceId: "instancia-real", state: "draft", status: "active",
+  });
+  store.getInstance = async () => ({ id: "instancia-real" });
+  const started = await createWorkflowEngine({ store, handlers: {} }).start({
+    tenantId: TENANT,
+    definition: approvalDefinition(),
+    entityType: "entity",
+    entityId: "raw",
+    actor: "owner",
+  });
+  assert.equal(started.replayed, true);
+  assert.equal(started.instanceId, "instancia-real");
+  assert.equal(started.state, "draft");
+});
+
 test("guard rechaza la transición sin cambiar el estado", async () => {
   const { store } = createMemoryStore();
   const engine = createWorkflowEngine({ store, handlers: { notify: async () => "ok", post: async () => "ok" } });

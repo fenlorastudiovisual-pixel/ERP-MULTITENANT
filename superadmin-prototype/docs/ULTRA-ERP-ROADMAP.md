@@ -2,7 +2,7 @@
 
 Este documento materializa la combinación decidida tras revisar ERPNext/Frappe, Huly, NocoBase e IDurar, contrastada con el benchmark 2026 de ERPs enterprise (SAP, Oracle Fusion, NetSuite, Dynamics 365, Workday, Infor, IFS).
 
-**Estado actual: P0 + Fase 2 completados en código.** `npm test` → 56/56 pruebas en verde; `npm run build` → correcto (incluye las 4 rutas `/negocio/api/ultra/*`). La migración SQL **sigue sin aplicar** y no se desplegó nada nuevo.
+**Estado actual: P0 + Fase 2 aplicados y verificados en la BD del ERP.** `npm test` → 58/58 pruebas en verde; `npm run build` → correcto (incluye las 4 rutas `/negocio/api/ultra/*`). Se aplicaron `ultra-erp-core.sql` (84 sentencias en una transacción) y `seed-ultra-config.sql` (1 entidad, 2 libros, 4 reglas, 1 grupo, 1 miembro, permisos RLS). La BD de **Samjuro no se tocó**.
 
 ## Principios arquitectónicos (ADR)
 
@@ -61,13 +61,14 @@ Las policies nuevas usan las funciones existentes `public.current_tenant_id()` y
 
 ## Migración
 
-La migración SQL **no se ha ejecutado**. Está lista para revisión. Cuando se decida aplicarla en una base que no sea la de producción de Samjuro:
+La migración SQL **ya se aplicó en la BD del ERP** (verificada: 29 tablas `erp_*`, sin tablas de Samjuro). Se ejecutó desde `superadmin-prototype`, con el entorno cargado desde `.env.local`:
 
 ```powershell
-node database/migrate-ultra-core.mjs --confirm=ULTRA-CORE
+.\node_modules\.bin\dotenvx.cmd run -f .env.local -- node database/migrate-ultra-core.mjs --confirm=ULTRA-CORE
+.\node_modules\.bin\dotenvx.cmd run -f .env.local -- node database/apply-ultra-seed.mjs --confirm=ULTRA-SEED
 ```
 
-El script exige el flag explícito y usa `DATABASE_APP_URL` / `DATABASE_URL` del entorno. El SQL no contiene `DELETE`, `TRUNCATE` ni `DROP TABLE`: solo `CREATE IF NOT EXISTS`, `ALTER ... ADD COLUMN`, `DROP/CREATE POLICY`, `DROP/CREATE TRIGGER`, un `DROP CONSTRAINT` condicional para corregir el check v1 de `erp_workflow_effects`, y el trigger de hash-chain de auditoría.
+Node no carga `.env.local` automáticamente; por eso se usa `dotenvx`. El migrador usa el protocolo Postgres completo (`pg`) porque el endpoint HTTP de Neon no persiste DDL multi-sentencia; `database/split-sql.mjs` separa las 84 sentencias respetando comentarios, comillas y bloques `$$`. Todo se ejecuta en una sola transacción. El SQL no contiene `DELETE`, `TRUNCATE` ni `DROP TABLE`: solo `CREATE IF NOT EXISTS`, `ALTER ... ADD COLUMN`, `DROP/CREATE POLICY`, `DROP/CREATE TRIGGER`, constraints condicionales y el trigger de hash-chain de auditoría.
 
 ## Verificación de P0
 
@@ -120,9 +121,19 @@ Si la migración aún no está aplicada, estas rutas responden `503` con un mens
 ### Verificación de Fase 2
 
 ```powershell
-npm test       # 56 tests, 56 pass, 0 fail
+npm test       # 58 tests, 58 pass, 0 fail
 npm run build  # compile + typecheck + 4 rutas /ultra/* en el manifiesto
 ```
+
+### Validación en BD real (ya ejecutada)
+
+- Configuración leída con RLS real: libros `local`/`group` en COP, 4 reglas, grupo `SAMJURO`.
+- Asiento operativo real `20bd9f33-…` (`invoice`, 2026-11-28, 3 líneas, `$ 1.744.108`).
+- `dryRun`: 2 asientos derivados, ambos balanceados. Persistencia: `inserted: 2`, reintento `0` (idempotente).
+- Consolidación corregida para usar **solo el libro `group`**: `$ 1.744.108`, sin duplicar el libro local.
+- Workflow `ultra.close`: `draft → review → posted`; el guard bloquea al rol `sales` y aprueba `accounting`.
+
+Durante la validación se corrigieron tres defectos reales: el migrador multi-sentencia con Neon HTTP, la falta de unicidad `(tenant_id, id)` en `erp_workflow_instances` y el formato del resultado de idempotencia devuelto por el store Postgres.
 
 ## Fases siguientes
 
@@ -134,7 +145,7 @@ npm run build  # compile + typecheck + 4 rutas /ultra/* en el manifiesto
 
 ## Lo que NO se hizo todavía
 
-- No se modificó `SAMJURO`.
-- No se aplicó DDL a ninguna base.
+- No se modificó `SAMJURO`: la verificación previa confirmó que `DATABASE_URL` apunta al ERP (`tenants`/`role_permissions` sí; `pedidos`/`vendedoras` no).
+- Sí se aplicó DDL aditivo a la BD del ERP, con confirmación explícita y en una transacción.
 - No se tocó `pedidos`, `pedido_items`, `vendedoras`, `panel_acceso`, `auth.users` ni secretos.
-- No se desplegó nada; el Worker en producción sigue en la versión anterior a este P0.
+- El deploy del Worker se decide después de esta validación.

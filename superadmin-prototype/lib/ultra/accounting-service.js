@@ -217,14 +217,17 @@ export function createAccountingService({ runner = defaultRunner, role = "tenant
         limit 1000
       `,
       tx`
-        select entity_id::text as entity_id, entry_date::text as entry_date,
-               currency::text as currency, rate::float as rate,
-               rate_type, lines
-        from public.erp_derived_entries
-        where tenant_id = ${tenantId}::uuid
-          and status = 'draft'
-          and entry_date <= ${date}::date
-        order by entry_date desc
+        select d.entity_id::text as entity_id, d.entry_date::text as entry_date,
+               d.currency::text as currency, d.rate::float as rate,
+               d.rate_type, d.lines
+        from public.erp_derived_entries d
+        join public.erp_ledgers l
+          on l.id = d.ledger_id and l.tenant_id = d.tenant_id
+        where d.tenant_id = ${tenantId}::uuid
+          and d.status = 'draft'
+          and l.kind = 'group'
+          and d.entry_date <= ${date}::date
+        order by d.entry_date desc
         limit 2000
       `,
       tx`

@@ -152,7 +152,14 @@ export function createWorkflowEngine({ store, handlers = {}, now = () => new Dat
     registerDefinition(definition);
     const key = idempotencyKey(definition, entityType, entityId, explicitKey);
     const existing = await store.getIdempotency(tenantId, key);
-    if (existing) return { ...existing.result, replayed: true };
+    if (existing) {
+      const cached = existing.result || existing;
+      // Un fallo parcial previo pudo dejar la clave de idempotencia sin la
+      // instancia correspondiente. En ese caso no devolvemos un ids fantasma:
+      // se recrea la instancia y la clave se sobrescribe al confirmar.
+      const alive = !cached.instanceId || (await store.getInstance(tenantId, cached.instanceId));
+      if (alive) return { ...cached, replayed: true };
+    }
 
     const createdAt = stamp(now());
     const instance = {

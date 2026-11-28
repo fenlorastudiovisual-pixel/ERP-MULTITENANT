@@ -57,3 +57,24 @@ values (
   1, '2026-01-01', null, 'full'
 )
 on conflict (tenant_id, group_id, entity_id, effective_from) do nothing;
+
+-- Permisos lógicos exigidos por las policies RLS de las tablas Ultra.
+-- Sin estas filas, un rol owner/admin/accounting no puede ni leer la configuración.
+insert into public.role_permissions (tenant_id, role, permission, allowed)
+select
+  '76fa9913-4ee3-40c4-bd43-ff300ad78d61'::uuid,
+  r.role,
+  o.object_name || '.' || a.action,
+  true
+from (values ('owner'), ('admin'), ('accounting')) as r(role)
+cross join (values
+  ('entity'), ('workflowDefinition'), ('workflowInstance'), ('outbox'),
+  ('auditEvent'), ('ledger'), ('postingRule'), ('derivedEntry'),
+  ('currencyRate'), ('consolidationGroup'), ('consolidationMember'),
+  ('intercompanyPair'), ('intercompanyTransaction'), ('eliminationRule'),
+  ('eliminationEntry'), ('eventEnvelope'), ('eventDelivery'), ('deadLetter'),
+  ('featureFlag'), ('agentDefinition'), ('toolAllowlist'), ('agentRun'),
+  ('approvalGate'), ('agentTrace')
+) as o(object_name)
+cross join (values ('read'), ('create'), ('update'), ('delete'), ('approve'), ('execute')) as a(action)
+on conflict (tenant_id, role, permission) do update set allowed = excluded.allowed;

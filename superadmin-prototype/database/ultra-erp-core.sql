@@ -115,6 +115,20 @@ create table if not exists public.erp_workflow_instances (
   unique (tenant_id, idempotency_key)
 );
 
+-- El store confirma escrituras por (tenant_id, id). En instalaciones previas
+-- esa unicidad no existía; se añade de forma idempotente.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'erp_workflow_instances_tenant_id_id_key'
+      and conrelid = 'public.erp_workflow_instances'::regclass
+  ) then
+    alter table public.erp_workflow_instances
+      add constraint erp_workflow_instances_tenant_id_id_key unique (tenant_id, id);
+  end if;
+end $$;
+
 create index if not exists erp_workflow_instances_due_idx
   on public.erp_workflow_instances (tenant_id, next_run_at)
   where status = 'retry';
