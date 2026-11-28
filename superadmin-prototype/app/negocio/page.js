@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Panel, Stat, Tag, Table, Btn, Field, Tabs, Modal, Drawer, Bars, Donut,
 } from "../../components/ui";
+import PasswordInput from "../components/PasswordInput";
 
 const TABS = [
   { id: "resumen", label: "Resumen" },
@@ -672,9 +673,10 @@ export default function BusinessPanel() {
               onChange={(e) => setForm({ ...form, email: e.target.value.toLowerCase() })} />
           </label>
           <label className="field">Contraseña
-            <input type="password" autoComplete="current-password" required
+            <PasswordInput
               value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })} />
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+            />
           </label>
           {mfaRequired && <label className="field">Código de autenticación (6 dígitos)
             <input inputMode="numeric" autoComplete="one-time-code" required maxLength={6}

@@ -116,3 +116,7 @@ npm run deploy
 ```
 
 El Worker se llama `erp-multitenant`. En Cloudflare → Workers & Pages → `erp-multitenant` → **Domains & Routes** se añade el dominio (por ejemplo `erp.tudominio.com`). La guía completa está en `superadmin-prototype/README.md`.
+
+Los formularios de contraseña usan el componente `app/components/PasswordInput.js`: el botón «ojito» alterna el campo entre `password` y `text`, es `type="button"` (no envía el formulario) y expone `aria-label`/`aria-pressed` para accesibilidad. Está en el login del negocio, en el login del super admin y en «Crear o cambiar contraseña».
+
+**Despliegue con ojito (2026-11-27, Worker `f8fbb8d9-2cd8-46c5-8b93-2ed203b916b8`):** se corrigió `database/patch-opennext-windows.mjs`, que llamaba a `process.exit(0)` al encontrar el parche ya aplicado y hacía que `npm run deploy` republicara artefactos antiguos sin recompilar el Worker. Después del arreglo, el build de OpenNext volvió a generar los chunks con `password-wrap` y `Mostrar contraseña`, y la verificación en el login confirmó el cambio `password` → `text` → `password`.

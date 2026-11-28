@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import PasswordInput from "../../components/PasswordInput";
 
 export default function RecoverPassword() {
   const [account, setAccount] = useState(null);
@@ -68,11 +69,11 @@ export default function RecoverPassword() {
             Correo verificado: <b>{account.email}</b> · {account.tenant}
           </p>}
           <label className="field">Nueva contraseña
-            <input type="password" autoComplete="new-password" required minLength={12}
+            <PasswordInput autoComplete="new-password" minLength={12}
               value={password} onChange={(e) => setPassword(e.target.value)} />
           </label>
           <label className="field">Repite la contraseña
-            <input type="password" autoComplete="new-password" required minLength={12}
+            <PasswordInput autoComplete="new-password" minLength={12}
               value={confirm} onChange={(e) => setConfirm(e.target.value)} />
           </label>
           {error && <p className="auth-access-note">{error}</p>}

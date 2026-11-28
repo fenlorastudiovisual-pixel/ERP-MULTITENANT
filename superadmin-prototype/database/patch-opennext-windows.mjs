@@ -21,34 +21,31 @@ const marker = "__SAMJURO_WIN_FALLBACK__";
 
 if (!existsSync(file)) {
   console.log("OpenNext copyTracedFiles.js no encontrado; se omite el parche.");
-  process.exit(0);
+} else {
+  const source = readFileSync(file, "utf8");
+  if (source.includes(marker)) {
+    console.log("Parche Windows de OpenNext ya aplicado.");
+  } else {
+    const needle = "symlinkSync(symlink, to);";
+    if (!source.includes(needle)) {
+      console.error("No se encontró el punto de parche en copyTracedFiles.js.");
+      process.exitCode = 1;
+    } else {
+      const replacement = `try {
+                  symlinkSync(symlink, to);
+                } catch (e) {
+                  if (e.code !== "EEXIST") {
+                    // ${marker}: en Windows no se pueden crear symlinks sin
+                    // privilegios. Copiar el contenido real funciona en Linux.
+                    const resolved = path.isAbsolute(symlink)
+                      ? symlink
+                      : path.resolve(path.dirname(from), symlink);
+                    if (!existsSync(resolved) || !statSync(resolved).isDirectory()) throw e;
+                    cpSync(resolved, to, { recursive: true, force: true });
+                  }
+                }`;
+      writeFileSync(file, source.replace(needle, replacement));
+      console.log("Parche Windows de OpenNext aplicado.");
+    }
+  }
 }
-
-const source = readFileSync(file, "utf8");
-if (source.includes(marker)) {
-  console.log("Parche Windows de OpenNext ya aplicado.");
-  process.exit(0);
-}
-
-const needle = "symlinkSync(symlink, to);";
-if (!source.includes(needle)) {
-  console.error("No se encontró el punto de parche en copyTracedFiles.js.");
-  process.exit(1);
-}
-
-const replacement = `try {
-                symlinkSync(symlink, to);
-              } catch (e) {
-                if (e.code !== "EEXIST") {
-                  // ${marker}: en Windows no se pueden crear symlinks sin
-                  // privilegios. Copiar el contenido real funciona en Linux.
-                  const resolved = path.isAbsolute(symlink)
-                    ? symlink
-                    : path.resolve(path.dirname(from), symlink);
-                  if (!existsSync(resolved) || !statSync(resolved).isDirectory()) throw e;
-                  cpSync(resolved, to, { recursive: true, force: true });
-                }
-              }`;
-
-writeFileSync(file, source.replace(needle, replacement));
-console.log("Parche Windows de OpenNext aplicado.");

@@ -5,6 +5,7 @@ import { SECTIONS, GROUPS, TENANTS_SEED, PLAN_SEED, USERS_SEED, LANGUAGES, TRANS
 import { Dashboard, Tenants, Plans, Billing } from "../components/sections-core";
 import { Users, Languages, Localization, Branding, Modules, Demos } from "../components/sections-config";
 import { Security, Operations, Support, Integrations, Data, BI, Settings } from "../components/sections-ops";
+import PasswordInput from "./components/PasswordInput";
 
 const STORAGE_KEY = "erp-multitenant-superadmin-v1";
 const STATE_VERSION = 2;
@@ -284,7 +285,11 @@ export default function Page() {
           </label>
           <label className="field">
             <span className="field-label">Contraseña</span>
-            <input type="password" autoComplete="current-password" required value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} placeholder="Mínimo 12 caracteres" />
+            <PasswordInput
+              value={loginPassword}
+              onChange={(e) => setLoginPassword(e.target.value)}
+              placeholder="Mínimo 12 caracteres"
+            />
           </label>
           {loginError && <div className="auth-error">{loginError}</div>}
           <button className="btn btn-primary auth-submit" type="submit" disabled={loggingIn}>
