@@ -148,4 +148,4 @@ Durante la validación se corrigieron tres defectos reales: el migrador multi-se
 - No se modificó `SAMJURO`: la verificación previa confirmó que `DATABASE_URL` apunta al ERP (`tenants`/`role_permissions` sí; `pedidos`/`vendedoras` no).
 - Sí se aplicó DDL aditivo a la BD del ERP, con confirmación explícita y en una transacción.
 - No se tocó `pedidos`, `pedido_items`, `vendedoras`, `panel_acceso`, `auth.users` ni secretos.
-- El deploy del Worker se decide después de esta validación.
+- Worker desplegado después de la validación: versión `f06ee300-41c4-4003-a91d-ab45731ddb03`. Las cuatro rutas `/negocio/api/ultra/*` existen en producción y responden `401` sin sesión, igual que el resto del panel.
