@@ -53,6 +53,7 @@ export function definePostingRule({
   ledger_id,
   account_map = {},
   dimension_map = {},
+  rounding_account = "rounding_difference",
   priority = 100,
   active = true,
 } = {}) {
@@ -65,6 +66,7 @@ export function definePostingRule({
     ledger_id,
     account_map: { ...account_map },
     dimension_map: { ...dimension_map },
+    rounding_account: normalize(rounding_account, "rounding_account"),
     priority,
     active,
   });
@@ -165,6 +167,21 @@ export function deriveEntry({ source, ledger, rule, rateBook = [], rate_type = "
     debit: fromMinor(bucket.debitMinor, ledger.currency),
     credit: fromMinor(bucket.creditMinor, ledger.currency),
   }));
+
+  // Cada línea se convierte por separado; el redondeo puede dejar una
+  // diferencia de una unidad menor. Se cierra en una cuenta explícita,
+  // nunca repartiendo centavos silenciosamente entre cuentas reales.
+  const debitMinor = lines.reduce((sum, line) => sum + toMinor(line.debit, ledger.currency), 0);
+  const creditMinor = lines.reduce((sum, line) => sum + toMinor(line.credit, ledger.currency), 0);
+  if (debitMinor !== creditMinor) {
+    const difference = Math.abs(debitMinor - creditMinor);
+    lines.push({
+      account: rule.rounding_account || "rounding_difference",
+      dimensions: { ...(source.dimensions || {}), ...dimensionMap },
+      debit: fromMinor(debitMinor < creditMinor ? difference : 0, ledger.currency),
+      credit: fromMinor(debitMinor > creditMinor ? difference : 0, ledger.currency),
+    });
+  }
 
   assertBalanced(lines, ledger.currency);
 

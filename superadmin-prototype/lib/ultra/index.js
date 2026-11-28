@@ -10,3 +10,5 @@ export * from "./intercompany.js";
 export * from "./tax.js";
 export * from "./observability.js";
 export * from "./agents.js";
+export * from "./accounting-service.js";
+export * from "./workflow-definitions.js";

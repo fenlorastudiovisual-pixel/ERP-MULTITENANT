@@ -81,6 +81,32 @@ test("deriveEntry traduce a USD con redondeo en unidades menores", () => {
   assert.equal(entry.total_debit, entry.total_credit);
 });
 
+test("deriveEntry cierra la diferencia de redondeo en cuenta explícita", () => {
+  const source = {
+    id: "FX-ROUND",
+    tenant_id: TENANT,
+    source_type: "invoice",
+    entry_date: DATE,
+    currency: "COP",
+    lines: [
+      { account: "clientes", debit: 2, credit: 0 },
+      { account: "ingresos", debit: 0, credit: 1 },
+      { account: "iva", debit: 0, credit: 1 },
+    ],
+  };
+  const entry = deriveEntry({
+    source,
+    ledger: { ...group, id: "ledger-group" },
+    rule: { ...groupRule, account_map: {} },
+    rateBook: [{
+      from_currency: "COP", to_currency: "USD",
+      rate_type: "closing", rate_date: "2026-11-01", rate: 0.005,
+    }],
+  });
+  assert.equal(entry.total_debit, entry.total_credit);
+  assert.ok(entry.lines.some((line) => line.account === "rounding_difference"));
+});
+
 test("buildPostingPlan crea un asiento por ledger y valida el plan", () => {
   const plan = buildPostingPlan({
     source: invoiceSource(),

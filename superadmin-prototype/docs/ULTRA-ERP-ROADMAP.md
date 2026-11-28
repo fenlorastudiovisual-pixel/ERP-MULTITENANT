@@ -2,7 +2,7 @@
 
 Este documento materializa la combinación decidida tras revisar ERPNext/Frappe, Huly, NocoBase e IDurar, contrastada con el benchmark 2026 de ERPs enterprise (SAP, Oracle Fusion, NetSuite, Dynamics 365, Workday, Infor, IFS).
 
-**Estado actual: P0 completado en código.** `npm test` → 48/48 pruebas en verde; `npm run build` → correcto. La migración SQL **sigue sin aplicar** y no se desplegó nada nuevo.
+**Estado actual: P0 + Fase 2 completados en código.** `npm test` → 56/56 pruebas en verde; `npm run build` → correcto (incluye las 4 rutas `/negocio/api/ultra/*`). La migración SQL **sigue sin aplicar** y no se desplegó nada nuevo.
 
 ## Principios arquitectónicos (ADR)
 
@@ -72,14 +72,62 @@ El script exige el flag explícito y usa `DATABASE_APP_URL` / `DATABASE_URL` del
 ## Verificación de P0
 
 ```powershell
-npm test       # 48 tests, 48 pass, 0 fail
+npm test       # 48 tests, 48 pass, 0 fail (antes de Fase 2)
 npm run build  # compile + typecheck + 6 páginas estáticas OK
+```
+
+## Qué se entrega en Fase 2 (API de contabilidad derivada)
+
+| Archivo | Qué hace |
+|---|---|
+| `lib/ultra/accounting-service.js` | Servidor únicamente. Lee configuración, deriva asientos por libro, persiste con `ON CONFLICT DO NOTHING` y consolida. `runner` inyectable e importación diferida de `db.js`. |
+| `lib/ultra/workflow-definitions.js` | Registro allowlisted: un solo workflow (`ultra.close`), eventos `submit/approve/reject` y guardas por rol `owner/admin/accounting`. La API no acepta definiciones del body. |
+| `lib/ultra/ledger.js` | Añade `rounding_account`; la diferencia de redondeo FX se cierra en `rounding_difference`, nunca se reparte entre cuentas reales. |
+| `lib/ultra/workflow.js` | `posted` es estado terminal, para que el cierre contable complete el workflow. |
+| `lib/ultra/metadata.js` | Registro actualizado con `rounding_account` y `entity_id`. |
+| `app/negocio/api/ultra/ledgers/route.js` | `GET`: libros, reglas, tasas, grupos y miembros. Requiere `finance.view`. |
+| `app/negocio/api/ultra/postings/route.js` | `GET`: asientos derivados. `POST`: deriva desde un asiento operativo publicado; `dryRun` calcula sin escribir. Requiere `finance.view` / `journal.post`. |
+| `app/negocio/api/ultra/consolidations/route.js` | `GET`: grupos/miembros. `POST`: consolidación con vigencia, FX, eliminaciones y NCI. Solo lectura. Requiere `finance.view`. |
+| `app/negocio/api/ultra/workflows/route.js` | `GET`: ejecuciones debidas y definiciones. `POST`: `start/advance/resume/run_due` sobre el registro permitido. Requiere `journal.post`. |
+| `database/seed-ultra-config.sql` | Configuración mínima **no aplicada**: entidad `Samjuro`, libros `local`/`group` en COP, 4 reglas y grupo `SAMJURO`. Sin tasas ni importes inventados. |
+| `lib/ultra/accounting-service.test.mjs` y `workflow-definitions.test.mjs` | 7 pruebas nuevas sin base de datos. |
+
+### Endpoints
+
+| Método y ruta | Body | Resultado |
+|---|---|---|
+| `GET /negocio/api/ultra/ledgers` | — | Configuración del tenant. |
+| `GET /negocio/api/ultra/postings?limit=60` | — | Últimos asientos derivados. |
+| `POST /negocio/api/ultra/postings` | `{ "sourceId": "<uuid asiento publicado>", "dryRun": true, "ledgerCodes": ["local","group"], "rateType": "closing" }` | `dryRun` devuelve el plan; sin `dryRun` inserta de forma idempotente y audita. |
+| `GET /negocio/api/ultra/consolidations` | — | Grupos y miembros vigentes. |
+| `POST /negocio/api/ultra/consolidations` | `{ "groupCode": "SAMJURO", "date": "2026-11-30", "rateType": "closing" }` | Balance consolidado con NCI y eliminaciones. |
+| `GET /negocio/api/ultra/workflows` | — | Definiciones permitidas y ejecuciones debidas. |
+| `POST /negocio/api/ultra/workflows` | `{ "action": "start", "entityType": "closing", "entityId": "<uuid>", "context": { "date": "2026-11-30" } }` | Inicia o reanuda el cierre gobernado. `advance` acepta solo `submit/approve/reject`. |
+
+Si la migración aún no está aplicada, estas rutas responden `503` con un mensaje seguro («La migración Ultra ERP no está aplicada en esta base de datos…»). No se filtran cadenas de conexión ni detalles de Postgres.
+
+### Orden manual para activar Fase 2
+
+1. Aplicar `database/ultra-erp-core.sql` en una base de **pruebas**, con `node database/migrate-ultra-core.mjs --confirm=ULTRA-CORE`.
+2. Revisar y aplicar `database/seed-ultra-config.sql` en el mismo entorno (solo `INSERT ... ON CONFLICT DO NOTHING`).
+3. Verificar `GET /negocio/api/ultra/ledgers`: deben aparecer 2 libros, 4 reglas, 1 grupo y 1 miembro.
+4. Tomar un `id` real de `public.journal_entries` con `status='posted'` y llamar a `POST /negocio/api/ultra/postings` con `dryRun:true`.
+5. Revisar que cada asiento derivado esté balanceado; solo entonces repetir sin `dryRun`.
+6. Probar `POST /negocio/api/ultra/consolidations` con `groupCode: "SAMJURO"` y una fecha válida.
+7. Probar el cierre con `POST /negocio/api/ultra/workflows` (`start` → `submit` → `approve`) con un rol `owner`/`accounting`.
+8. Recién después de esa validación, desplegar el Worker y avisar al usuario.
+
+### Verificación de Fase 2
+
+```powershell
+npm test       # 56 tests, 56 pass, 0 fail
+npm run build  # compile + typecheck + 4 rutas /ultra/* en el manifiesto
 ```
 
 ## Fases siguientes
 
-1. **Fase 1 — Seed de metadatos.** Insertar los descriptores en la BD y generar policies para las tablas nuevas.
-2. **Fase 2 — API de contabilidad derivada.** Exponer `start/advance/resume`, posting por libro, cierre y consolidación con permisos por rol.
+1. ~~**Fase 1 — Seed de metadatos.**~~ Código listo en P0; pendiente de aplicar en BD.
+2. ~~**Fase 2 — API de contabilidad derivada.**~~ Código listo; pendiente de migración, seed y prueba en entorno de pruebas.
 3. **Fase 3 — ESG/EPM y tesorería.** Presupuestos, cash pooling, previsiones y reportes por dimensión.
 4. **Fase 4 — Integraciones.** Webhooks firmados, OAuth2/OIDC/SAML, conectores y API keys con rotación.
 5. **Fase 5 — UI.** Worklists con acciones directas, object pages con anclas, comandos contextuales por rol/estado, vistas guardadas en URL y PWA/offline.

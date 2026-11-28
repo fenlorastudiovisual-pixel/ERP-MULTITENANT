@@ -2,7 +2,7 @@
 // idempotencia, reintentos y outbox. Inspirado en @nocobase/lifecycle,
 // sin depender de su licencia ni de un designer visual.
 
-const TERMINAL_STATES = new Set(["completed", "approved", "rejected", "cancelled"]);
+const TERMINAL_STATES = new Set(["completed", "approved", "posted", "rejected", "cancelled"]);
 
 let fallbackCounter = 0;
 function defaultId() {
